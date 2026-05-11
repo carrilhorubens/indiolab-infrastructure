@@ -49,7 +49,7 @@ echo "==> [2/4] Pull do indiolab-infrastructure"
 git pull --ff-only 2>&1 | tail -1
 
 echo "==> [3/4] Build + recreate: $SERVICES"
-docker compose --env-file /opt/indiolab/.env build $SERVICES 2>&1 | tail -3
+docker compose --env-file /opt/indiolab/.env build --no-cache $SERVICES 2>&1 | tail -3
 docker compose --env-file /opt/indiolab/.env up -d --force-recreate --no-deps $SERVICES 2>&1 | tail -3
 
 echo "==> [4/4] Status + smoke"
