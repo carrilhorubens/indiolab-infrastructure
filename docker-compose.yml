@@ -1,0 +1,246 @@
+# IndioLab — docker-compose.yml de produção
+#
+# Uso (via deploy/scripts/deploy.sh):
+#   cd /opt/indiolab/repo
+#   docker compose -f deploy/compose/docker-compose.yml --env-file /opt/indiolab/.env up -d --build
+#
+# Estrutura de paths no servidor (NÃO versionado):
+#   /opt/indiolab/
+#     ├── repo/                      ← git clone do monorepo
+#     ├── .env                       ← secrets, gerenciado fora do repo
+#     └── data/
+#         ├── postgres/              ← volume bind do postgres
+#         ├── n8n/                   ← persistência n8n
+#         └── uploads/               ← uploads dos APIs
+#                ├── erp/
+#                └── ichat/
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: indiolab-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: opticalcore
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: opticalcore
+    ports:
+      - "5432:5432"
+    volumes:
+      # postgres:18 mudou layout — mount em /var/lib/postgresql; o container cria
+      # subdirs major-version-specific dentro (ex: /var/lib/postgresql/18/docker/data)
+      - /opt/indiolab/data/postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opticalcore"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # BACKENDS — .NET 10 APIs (network_mode: host)
+  # ============================================
+  # IdP é o erp-api (JWT RS256 in-process). Demais APIs validam tokens com
+  # apenas a chave pública (sem round-trip externo).
+
+  erp-api:
+    build:
+      context: ..
+      dockerfile: erp.dev.indiolab.com.br/erp-api/Dockerfile
+    image: indiolab-erp-api:latest
+    container_name: indiolab-erp-api
+    restart: always
+    network_mode: host
+    environment:
+      ASPNETCORE_URLS: http://+:5050
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: ${ConnectionStrings__DefaultConnection}
+      JwtSettings__Issuer: https://auth.dev.indiolab.com.br
+      JwtSettings__Audience: indiolab-erp
+      JwtSettings__RsaPrivateKeyPem: ${JWT_RSA_PRIVATE_KEY}
+      JwtSettings__RsaPublicKeyPem: ${JWT_RSA_PUBLIC_KEY}
+      JwtSettings__AccessTokenMinutes: 15
+      JwtSettings__RefreshTokenDays: 7
+      Internal__SharedSecret: ${INTERNAL_SHARED_SECRET_ERP}
+    volumes:
+      - /opt/indiolab/data/uploads/erp:/app/wwwroot/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  crm-api:
+    build:
+      context: ..
+      dockerfile: crm.dev.indiolab.com.br/crm-api/Dockerfile
+    image: indiolab-crm-api:latest
+    container_name: indiolab-crm-api
+    restart: always
+    network_mode: host
+    environment:
+      ASPNETCORE_URLS: http://+:5051
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: ${ConnectionStrings__DefaultConnection}
+      JwtSettings__Issuer: https://auth.dev.indiolab.com.br
+      JwtSettings__Audience: indiolab-erp
+      JwtSettings__RsaPublicKeyPem: ${JWT_RSA_PUBLIC_KEY}
+      JwtSettings__AccessTokenMinutes: 15
+      JwtSettings__RefreshTokenDays: 7
+      GoogleMaps__ApiKey: ${GOOGLE_MAPS_API_KEY}
+      Internal__SharedSecret: ${INTERNAL_SHARED_SECRET_CRM}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ichat-api:
+    build:
+      context: ..
+      dockerfile: chat.dev.indiolab.com.br/chat-api/Dockerfile
+    image: indiolab-ichat-api:latest
+    container_name: indiolab-ichat-api
+    restart: always
+    network_mode: host
+    environment:
+      ASPNETCORE_URLS: http://+:5052
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: ${ConnectionStrings__DefaultConnection}
+      JwtSettings__Issuer: https://auth.dev.indiolab.com.br
+      JwtSettings__Audience: indiolab-erp
+      JwtSettings__RsaPublicKeyPem: ${JWT_RSA_PUBLIC_KEY}
+      JwtSettings__AccessTokenMinutes: 15
+      JwtSettings__RefreshTokenDays: 7
+      Internal__SharedSecret: ${INTERNAL_SHARED_SECRET_CHAT}
+    volumes:
+      - /opt/indiolab/data/uploads/ichat:/app/wwwroot/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ============================================
+  # ADMIN — orquestrador + UI
+  # ============================================
+
+  admin-api:
+    build:
+      context: ..
+      dockerfile: admin.dev.indiolab.com.br/admin-api/Dockerfile
+    image: indiolab-admin-api:latest
+    container_name: indiolab-admin-api
+    restart: always
+    network_mode: host
+    environment:
+      ASPNETCORE_URLS: http://+:5053
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: ${ConnectionStrings__DefaultConnection}
+      JwtSettings__Issuer: https://auth.dev.indiolab.com.br
+      JwtSettings__Audience: indiolab-erp
+      # admin-api é IdP local (emite tokens em /api/auth/login) — precisa da private key
+      JwtSettings__RsaPrivateKeyPem: ${JWT_RSA_PRIVATE_KEY}
+      JwtSettings__RsaPublicKeyPem: ${JWT_RSA_PUBLIC_KEY}
+      JwtSettings__AccessTokenMinutes: 15
+      JwtSettings__RefreshTokenDays: 7
+      # Discovery dos satélites (consumido por SatelliteCatalogSyncer)
+      Internal__ErpApiUrl: http://localhost:5050
+      Internal__ErpSharedSecret: ${INTERNAL_SHARED_SECRET_ERP}
+      Internal__CrmApiUrl: http://localhost:5051
+      Internal__CrmSharedSecret: ${INTERNAL_SHARED_SECRET_CRM}
+      Internal__ChatApiUrl: http://localhost:5052
+      Internal__ChatSharedSecret: ${INTERNAL_SHARED_SECRET_CHAT}
+      # Tenant fan-out (admin orquestra erp/crm/ichat por tenant)
+      Tenants__BusinessApis__erp-api: http://localhost:5050
+      Tenants__BusinessApis__crm-api: http://localhost:5051
+      Tenants__BusinessApis__ichat-api: http://localhost:5052
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ============================================
+  # FRONTENDS — nginx servindo bundles React
+  # ============================================
+
+  erp-web:
+    build:
+      context: ..
+      dockerfile: erp.dev.indiolab.com.br/erp-web/Dockerfile
+      args:
+        VITE_API_URL: https://erp.dev.indiolab.com.br/api
+        VITE_ADMIN_API_URL: https://admin.dev.indiolab.com.br
+    image: indiolab-erp-web:latest
+    container_name: indiolab-erp-web
+    restart: always
+    ports:
+      - "3001:80"
+
+  crm-web:
+    build:
+      context: ..
+      dockerfile: crm.dev.indiolab.com.br/crm-web/Dockerfile
+      args:
+        VITE_API_URL: https://crm.dev.indiolab.com.br/api
+        VITE_AUTH_API_URL: https://admin.dev.indiolab.com.br/api
+        VITE_ADMIN_API_URL: https://admin.dev.indiolab.com.br
+    image: indiolab-crm-web:latest
+    container_name: indiolab-crm-web
+    restart: always
+    ports:
+      - "3002:80"
+
+  ichat-web:
+    build:
+      context: ..
+      dockerfile: chat.dev.indiolab.com.br/chat-web/Dockerfile
+      args:
+        VITE_API_URL: https://chat.dev.indiolab.com.br/api
+        VITE_AUTH_API_URL: https://admin.dev.indiolab.com.br/api
+        VITE_ADMIN_API_URL: https://admin.dev.indiolab.com.br
+    image: indiolab-ichat-web:latest
+    container_name: indiolab-ichat-web
+    restart: always
+    ports:
+      - "3003:80"
+
+  admin-web:
+    build:
+      context: ..
+      dockerfile: admin.dev.indiolab.com.br/admin-web/Dockerfile
+      args:
+        VITE_API_URL: https://admin.dev.indiolab.com.br/api
+        VITE_AUTH_URL: https://admin.dev.indiolab.com.br/api
+        VITE_ADMIN_API_URL: https://admin.dev.indiolab.com.br
+    image: indiolab-admin-web:latest
+    container_name: indiolab-admin-web
+    restart: always
+    ports:
+      - "3004:80"
+
+  # ============================================
+  # n8n — workflow automation
+  # ============================================
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: indiolab-n8n
+    restart: always
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: opticalcore
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: n8n.dev.indiolab.com.br
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://n8n.dev.indiolab.com.br/
+      N8N_EDITOR_BASE_URL: https://n8n.dev.indiolab.com.br/
+      N8N_PROXY_HOPS: "1"
+      GENERIC_TIMEZONE: America/Sao_Paulo
+      TZ: America/Sao_Paulo
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+    volumes:
+      - /opt/indiolab/data/n8n:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy

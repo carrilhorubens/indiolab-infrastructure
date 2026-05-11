@@ -1,0 +1,2109 @@
+🎯 Minha Compreensão:
+
+  Você quer um protótipo visual funcional do dashboard que:
+
+  1. Não precisa de backend (dados mockados localmente)
+      *** precisa sim pois eu quero o sistema de autenticação de usuarios 
+  2. Tem autenticação simulada (apenas validação local)
+  3. Design premium com Material UI
+  4. Tema claro/escuro com toggle
+  5. Role ADMIN com acesso total (sem restrições de UI)
+  6. Pronto para demonstração (visual completo)
+
+  ---
+  ❓ Confirmações Necessárias:
+
+  1. Criar na pasta atual (/Users/rubenscarrilho/Documents/GitHub/opticalcore.com.br)? Ou em subpasta frontend/?
+  2. Ferramenta de build: Vite (rápido) ou Create React App?
+  3. Biblioteca de gráficos: Recharts (simples) ou Chart.js?
+  4. Já existe alguma documentação em docs/ que devo seguir?
+  5. Paleta de cores: Tem preferência ou posso usar azul profissional + cinzas?
+
+
+
+
+
+
+- criar tabela users com os campos: name, email, password
+- criar tabela sidebar_menu com os campos: name, description, active (boolean), created_by (user id), created_at (timestamp),  updated_at (timestamp), deleted_at (timestamp)
+- criar tabela sidebar_submenu com os campos: name, description, route, active (boolean), created_by (user id), created_at (timestamp),  updated_at (timestamp), deleted_at (timestamp)
+
+
+
+
+  ┌────────────┬───────────────────┬───────────────────────┐
+  │   Campo    │       Tipo        │       Descrição       │
+  ├────────────┼───────────────────┼───────────────────────┤
+  │ active     │ boolean           │ Status ativo/inativo  │
+  ├────────────┼───────────────────┼───────────────────────┤
+  │ created_by │ uuid (FK → users) │ Usuário que criou     │
+  ├────────────┼───────────────────┼───────────────────────┤
+  │ created_at │ timestamp         │ Data de criação       │
+  ├────────────┼───────────────────┼───────────────────────┤
+  │ updated_by │ uuid (FK → users) │ Usuário que atualizou │
+  ├────────────┼───────────────────┼───────────────────────┤
+  │ updated_at │ timestamp         │ Data de atualização   │
+  ├────────────┼───────────────────┼───────────────────────┤
+  │ deleted_by │ uuid (FK → users) │ Usuário que deletou   │
+  ├────────────┼───────────────────┼───────────────────────┤
+  │ deleted_at │ timestamp         │ Data de soft delete   │
+  └────────────┴───────────────────┴───────────────────────┘                                                                                                                                
+                                                                                                                                                                                            
+
+
+
+
+
+A estrutura correta para fazermos o Navbar dinâmico e o funcionamento correto para Usuários (users), Direitos (user_roles) and Permissões (user_permissions) seria assim:
+
+tabela                  descrição
+----------------------------------------------------------
+sidebar_menus           cadastro dos menus
+sidebar_submenus        cadastro dos submenus
+sidebar_routes          cadastro das rotas
+users                   cadastro de usuários
+user_roles              cadastro de direitos
+user_permissions        cadastro de permissões
+
+
+Desenho da hierarquia de users:
+
+users
+   |
+   +----> user_roles
+             |
+             +--------> user_permissions
+
+Desenho da hierarquia de sidebar:
+        |
+        +----> sidebar_submenus
+                        |
+                        +--------> sidebar_routes
+
+- Exemplo real de funcionamento de um usuário com direitos administrador
+
+O usuário:
+users: admin@opticalcore.com.br
+user_roles: admin
+user_permissions:
+                Listar todos usuários (paginado)
+                Buscar usuário específico       
+                Criar novo usuário              
+                Atualizar usuário               
+                Desativar usuário (soft delete) 
+                Resetar senha
+
+Vai ter acesso:
+sidebar_menus: Usuários (menu)
+sidebar_submenus: Cadastro (submenu)
+sidebar_routes:
+              /users                         
+              /users/{user_id}               
+              /users                         
+              /users/{user_id}               
+              /users/{user_id}               
+              /users/{user_id}/reset-password
+
+
+- Exemplo real de funcionamento de um usuário com direitos visualizador
+
+O usuário:
+users: viewer@opticalcore.com.br
+user_roles: viewer
+user_permissions:
+                Listar todos usuários (paginado)
+                Buscar usuário específico       
+
+Vai ter acesso:
+sidebar_menus: Usuários (menu)
+sidebar_submenus: Cadastro (submenu)
+sidebar_routes:
+              /users                         
+              /users/{user_id}               
+
+Faça uma análise do seu entendimento e me mostre um plano de implementação
+
+
+
+
+
+
+
+
+
+
+⏺ 📊 ANÁLISE COMPLETA: Sistema de Permissões Granulares e Navegação Dinâmica
+
+  🎯 MEU ENTENDIMENTO
+
+  Você está propondo uma reestruturação completa do sistema de autorização e navegação, mudando de:
+
+  ❌ Sistema Atual (Role-Based Access Control - RBAC Simples)
+
+  users.role_id → user_roles (admin/manager/viewer)
+                      ↓
+                permissions: JSONB (flexível mas não granular)
+                      ↓
+            Autorização: require_role(['admin', 'manager'])
+                      ↓
+              Sidebar: ESTÁTICO no frontend
+
+  ✅ Sistema Proposto (Permission-Based Access Control - PBAC Granular)
+
+  users → user_roles → user_permissions (many-to-many)
+             ↓              ↓
+         "admin"    ["listar_usuarios", "criar_usuario", ...]
+                             ↓
+                    Vincula com sidebar_routes
+                             ↓
+                Autorização: require_permission("listar_usuarios")
+                             ↓
+                   Sidebar: DINÂMICO do backend
+
+  ---
+  🏗️ ARQUITETURA PROPOSTA
+
+  📊 Estrutura de Tabelas
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                    HIERARQUIA DE USUÁRIOS                       │
+  └─────────────────────────────────────────────────────────────────┘
+
+  ┌──────────────┐
+  │    users     │
+  │──────────────│
+  │ id           │──┐
+  │ email        │  │
+  │ name         │  │
+  │ role_id      │──┼───────┐
+  │ ...          │  │       │
+  └──────────────┘  │       │
+                    │       │
+                    │       ↓
+                    │  ┌─────────────────┐
+                    │  │   user_roles    │
+                    │  │─────────────────│
+                    │  │ id              │──┐
+                    │  │ name (admin)    │  │
+                    │  │ display_name    │  │
+                    │  │ ...             │  │
+                    │  └─────────────────┘  │
+                    │                       │
+                    │                       │ Many-to-Many
+                    │                       │ (Nova tabela: role_permissions)
+                    │                       │
+                    │                       ↓
+                    │              ┌──────────────────────┐
+                    │              │  user_permissions    │
+                    │              │──────────────────────│
+                    │              │ id                   │
+                    │              │ name (listar_users)  │
+                    │              │ display_name         │
+                    │              │ description          │
+                    │              │ route_id (FK)        │──┐
+                    │              │ ...                  │  │
+                    │              └──────────────────────┘  │
+                    │                                        │
+                    │                                        │
+  ┌─────────────────────────────────────────────────────────┼───────┐
+  │                  HIERARQUIA DE SIDEBAR                  │       │
+  └─────────────────────────────────────────────────────────┼───────┘
+                                                            │
+  ┌──────────────────┐                                      │
+  │  sidebar_menus   │                                      │
+  │──────────────────│                                      │
+  │ id               │──┐                                   │
+  │ name (Usuários)  │  │                                   │
+  │ icon             │  │                                   │
+  │ order            │  │                                   │
+  │ ...              │  │                                   │
+  └──────────────────┘  │                                   │
+                        │                                   │
+                        │ One-to-Many                       │
+                        │                                   │
+                        ↓                                   │
+              ┌────────────────────┐                        │
+              │ sidebar_submenus   │                        │
+              │────────────────────│                        │
+              │ id                 │──┐                     │
+              │ menu_id (FK)       │  │                     │
+              │ name (Cadastro)    │  │                     │
+              │ order              │  │                     │
+              │ ...                │  │                     │
+              └────────────────────┘  │                     │
+                                      │                     │
+                                      │ One-to-Many         │
+                                      │                     │
+                                      ↓                     │
+                            ┌──────────────────┐            │
+                            │  sidebar_routes  │            │
+                            │──────────────────│            │
+                            │ id               │←───────────┘
+                            │ submenu_id (FK)  │
+                            │ path (/users)    │
+                            │ method (GET)     │
+                            │ component        │
+                            │ ...              │
+                            └──────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │              TABELA DE RELACIONAMENTO (Many-to-Many)            │
+  └─────────────────────────────────────────────────────────────────┘
+
+                      ┌──────────────────────┐
+                      │  role_permissions    │
+                      │──────────────────────│
+                      │ id                   │
+                      │ role_id (FK)         │
+                      │ permission_id (FK)   │
+                      │ created_at           │
+                      └──────────────────────┘
+
+  ---
+  📋 DETALHAMENTO DAS TABELAS
+
+  1️⃣ sidebar_menus - Menus Principais
+
+  | Campo        | Tipo     | Descrição         | Exemplo              |
+  |--------------|----------|-------------------|----------------------|
+  | id           | UUID     | PK                | uuid                 |
+  | name         | String   | Nome do menu      | "Usuários"           |
+  | display_name | String   | Nome exibido      | "Gerenciar Usuários" |
+  | icon         | String   | Ícone MUI         | "People"             |
+  | order        | Integer  | Ordem de exibição | 1                    |
+  | active       | Boolean  | Ativo/Inativo     | true                 |
+  | created_at   | DateTime | Data criação      | timestamp            |
+
+  Exemplo de Registros:
+  INSERT INTO sidebar_menus (name, display_name, icon, order) VALUES
+  ('usuarios', 'Usuários', 'People', 1),
+  ('configuracoes', 'Configurações', 'Settings', 2);
+
+  ---
+  2️⃣ sidebar_submenus - Submenus
+
+  | Campo        | Tipo     | Descrição          | Exemplo    |
+  |--------------|----------|--------------------|------------|
+  | id           | UUID     | PK                 | uuid       |
+  | menu_id      | UUID     | FK → sidebar_menus | uuid       |
+  | name         | String   | Nome do submenu    | "cadastro" |
+  | display_name | String   | Nome exibido       | "Cadastro" |
+  | order        | Integer  | Ordem de exibição  | 1          |
+  | active       | Boolean  | Ativo/Inativo      | true       |
+  | created_at   | DateTime | Data criação       | timestamp  |
+
+  Exemplo de Registros:
+  INSERT INTO sidebar_submenus (menu_id, name, display_name, order) VALUES
+  ('[menu_usuarios_id]', 'cadastro', 'Cadastro', 1),
+  ('[menu_usuarios_id]', 'importacao', 'Importação', 2);
+
+  ---
+  3️⃣ sidebar_routes - Rotas Específicas
+
+  | Campo            | Tipo     | Descrição             | Exemplo          |
+  |------------------|----------|-----------------------|------------------|
+  | id               | UUID     | PK                    | uuid             |
+  | submenu_id       | UUID     | FK → sidebar_submenus | uuid             |
+  | path             | String   | Path da rota          | "/users"         |
+  | method           | String   | Método HTTP           | "GET"            |
+  | component        | String   | Componente frontend   | "UserManagement" |
+  | backend_endpoint | String   | Endpoint backend      | "/admin/users"   |
+  | order            | Integer  | Ordem de exibição     | 1                |
+  | active           | Boolean  | Ativo/Inativo         | true             |
+  | created_at       | DateTime | Data criação          | timestamp        |
+
+  Exemplo de Registros:
+  INSERT INTO sidebar_routes (submenu_id, path, method, component, backend_endpoint) VALUES
+  ('[submenu_cadastro_id]', '/usuarios/cadastro', 'GET', 'UserManagement', '/admin/users'),
+  ('[submenu_cadastro_id]', '/usuarios/:id/editar', 'PUT', 'UserEdit', '/admin/users/{id}');
+
+  ---
+  4️⃣ user_permissions - Permissões Granulares
+
+  | Campo        | Tipo     | Descrição                      | Exemplo                         |
+  |--------------|----------|--------------------------------|---------------------------------|
+  | id           | UUID     | PK                             | uuid                            |
+  | name         | String   | Nome único                     | "users.list"                    |
+  | display_name | String   | Nome exibido                   | "Listar Usuários"               |
+  | description  | Text     | Descrição                      | "Permite listar todos usuários" |
+  | resource     | String   | Recurso                        | "users"                         |
+  | action       | String   | Ação                           | "list"                          |
+  | route_id     | UUID     | FK → sidebar_routes (opcional) | uuid                            |
+  | active       | Boolean  | Ativo/Inativo                  | true                            |
+  | created_at   | DateTime | Data criação                   | timestamp                       |
+
+  Exemplo de Registros:
+  INSERT INTO user_permissions (name, display_name, description, resource, action) VALUES
+  ('users.list', 'Listar Usuários', 'Permite listar todos usuários (paginado)', 'users', 'list'),
+  ('users.view', 'Buscar Usuário', 'Permite buscar usuário específico', 'users', 'view'),
+  ('users.create', 'Criar Usuário', 'Permite criar novo usuário', 'users', 'create'),
+  ('users.update', 'Atualizar Usuário', 'Permite atualizar usuário', 'users', 'update'),
+  ('users.delete', 'Desativar Usuário', 'Permite desativar usuário (soft delete)', 'users', 'delete'),
+  ('users.reset_password', 'Resetar Senha', 'Permite resetar senha de usuário', 'users', 'reset_password');
+
+  ---
+  5️⃣ role_permissions - Relacionamento Many-to-Many
+
+  | Campo         | Tipo     | Descrição             | Exemplo   |
+  |---------------|----------|-----------------------|-----------|
+  | id            | UUID     | PK                    | uuid      |
+  | role_id       | UUID     | FK → user_roles       | uuid      |
+  | permission_id | UUID     | FK → user_permissions | uuid      |
+  | created_at    | DateTime | Data criação          | timestamp |
+
+  Exemplo de Registros (Admin):
+  -- Admin tem todas as 6 permissões
+  INSERT INTO role_permissions (role_id, permission_id) VALUES
+  ('[admin_role_id]', '[users.list_id]'),
+  ('[admin_role_id]', '[users.view_id]'),
+  ('[admin_role_id]', '[users.create_id]'),
+  ('[admin_role_id]', '[users.update_id]'),
+  ('[admin_role_id]', '[users.delete_id]'),
+  ('[admin_role_id]', '[users.reset_password_id]');
+
+  Exemplo de Registros (Viewer):
+  -- Viewer tem apenas 2 permissões
+  INSERT INTO role_permissions (role_id, permission_id) VALUES
+  ('[viewer_role_id]', '[users.list_id]'),
+  ('[viewer_role_id]', '[users.view_id]');
+
+  ---
+  6️⃣ Alteração em user_roles (Tabela Existente)
+
+  Remover campo: permissions (JSONB) - não será mais necessário
+
+  Manter estrutura:
+  user_roles (
+    id UUID,
+    name VARCHAR(50),  -- 'admin', 'viewer', etc
+    display_name VARCHAR(100),
+    description TEXT,
+    active BOOLEAN,
+    is_system BOOLEAN,
+    created_at TIMESTAMP,
+    ...
+  )
+
+  ---
+  🔄 FLUXO DE FUNCIONAMENTO
+
+  📌 Exemplo 1: Admin fazendo login
+
+  1. Admin faz login → Recebe JWT token
+           ↓
+  2. Frontend chama GET /api/sidebar
+     (com Bearer token)
+           ↓
+  3. Backend valida token → Identifica user
+           ↓
+  4. Backend busca:
+     - user.role_id = '[admin_role_id]'
+           ↓
+  5. Backend busca permissions do role:
+     SELECT p.* FROM user_permissions p
+     JOIN role_permissions rp ON rp.permission_id = p.id
+     WHERE rp.role_id = '[admin_role_id]'
+
+     Retorna: ['users.list', 'users.view', 'users.create',
+               'users.update', 'users.delete', 'users.reset_password']
+           ↓
+  6. Backend busca routes vinculadas às permissions:
+     SELECT r.* FROM sidebar_routes r
+     JOIN user_permissions p ON p.route_id = r.id
+     WHERE p.name IN ('users.list', 'users.view', ...)
+           ↓
+  7. Backend busca submenus dessas routes:
+     SELECT s.* FROM sidebar_submenus s
+     WHERE s.id IN (SELECT route.submenu_id FROM routes)
+           ↓
+  8. Backend busca menus desses submenus:
+     SELECT m.* FROM sidebar_menus m
+     WHERE m.id IN (SELECT submenu.menu_id FROM submenus)
+           ↓
+  9. Backend monta JSON hierárquico e retorna:
+     {
+       "menus": [
+         {
+           "id": "...",
+           "name": "Usuários",
+           "icon": "People",
+           "submenus": [
+             {
+               "id": "...",
+               "name": "Cadastro",
+               "routes": [
+                 { "path": "/usuarios/cadastro", "component": "UserManagement" },
+                 { "path": "/usuarios/:id/editar", "component": "UserEdit" },
+                 ...
+               ]
+             }
+           ]
+         }
+       ],
+       "permissions": ['users.list', 'users.view', ...]
+     }
+           ↓
+  10. Frontend renderiza Sidebar dinamicamente
+      com TODOS os menus, submenus e rotas do admin
+
+  ---
+  📌 Exemplo 2: Viewer fazendo login
+
+  1. Viewer faz login → Recebe JWT token
+           ↓
+  2. Frontend chama GET /api/sidebar
+           ↓
+  3-4. Backend identifica user e busca role
+           ↓
+  5. Backend busca permissions do viewer:
+
+     Retorna: ['users.list', 'users.view']  ← APENAS 2!
+           ↓
+  6-9. Backend monta hierarquia com APENAS
+       as routes vinculadas a essas 2 permissions
+           ↓
+  10. Backend retorna:
+     {
+       "menus": [
+         {
+           "name": "Usuários",
+           "submenus": [
+             {
+               "name": "Cadastro",
+               "routes": [
+                 { "path": "/usuarios/cadastro", "component": "UserManagement" }
+                 ← APENAS visualização, SEM editar/criar/deletar
+               ]
+             }
+           ]
+         }
+       ],
+       "permissions": ['users.list', 'users.view']
+     }
+           ↓
+  11. Frontend renderiza Sidebar com MENOS opções
+      - Botão "Novo Usuário" NÃO aparece (verifica permission 'users.create')
+      - Ícone "Editar" NÃO aparece (verifica permission 'users.update')
+      - Ícone "Deletar" NÃO aparece (verifica permission 'users.delete')
+
+  ---
+  📌 Exemplo 3: Admin tentando criar usuário
+
+  Admin clica "Novo Usuário" no frontend
+           ↓
+  Frontend verifica: user.permissions.includes('users.create')
+           ↓
+  ✅ TRUE → Abre dialog UserForm
+           ↓
+  Admin preenche e submete
+           ↓
+  POST /admin/users com Bearer token
+           ↓
+  Backend: Novo decorator @require_permission("users.create")
+           ↓
+  Backend valida:
+  1. Token válido? ✅
+  2. User ativo? ✅
+  3. User tem permission "users.create"?
+
+     SELECT COUNT(*) FROM role_permissions rp
+     JOIN user_permissions p ON p.id = rp.permission_id
+     WHERE rp.role_id = user.role_id
+     AND p.name = 'users.create'
+           ↓
+  ✅ COUNT > 0 → Permissão concedida
+           ↓
+  Backend executa lógica de criação
+           ↓
+  Retorna 201 Created
+
+  ---
+  📌 Exemplo 4: Viewer tentando criar usuário
+
+  Viewer acessa /usuarios/cadastro
+           ↓
+  Frontend busca sidebar do backend
+           ↓
+  Backend retorna permissions: ['users.list', 'users.view']
+           ↓
+  Frontend renderiza página UserManagement
+           ↓
+  Frontend verifica: user.permissions.includes('users.create')
+           ↓
+  ❌ FALSE → Botão "Novo Usuário" NÃO É RENDERIZADO
+           ↓
+  (Se viewer tentar burlar e fazer POST direto via curl/Postman)
+           ↓
+  POST /admin/users com Bearer token de viewer
+           ↓
+  Backend: @require_permission("users.create")
+           ↓
+  Backend valida:
+     SELECT COUNT(*) FROM role_permissions ...
+           ↓
+  ❌ COUNT = 0 → Permissão negada
+           ↓
+  Retorna 403 Forbidden
+  {
+    "detail": "Permissão 'users.create' não concedida"
+  }
+
+  ---
+  🛠️ PLANO DE IMPLEMENTAÇÃO
+
+  📦 FASE 1: Preparação do Banco de Dados
+
+  Tarefas:
+
+  1. Criar migrations para novas tabelas
+    - sidebar_menus
+    - sidebar_submenus
+    - sidebar_routes
+    - user_permissions
+    - role_permissions (many-to-many)
+  2. Migração de dados existentes
+    - Mapear permissions atuais (JSONB em user_roles) para novos registros em user_permissions
+    - Criar registros iniciais em sidebar_menus, sidebar_submenus, sidebar_routes
+  3. Popular tabelas com dados iniciais
+    - Menus: Usuários, Configurações, etc
+    - Submenus: Cadastro, Importação, etc
+    - Routes: /usuarios/cadastro, /usuarios/:id/editar, etc
+    - Permissions: users.list, users.view, users.create, etc
+    - Role_permissions: vincular admin com 6 permissions, viewer com 2
+
+  Arquivos:
+  - /backend/alembic/versions/XXXX_create_permissions_and_sidebar_tables.py
+  - /backend/alembic/versions/XXXX_migrate_existing_permissions.py
+  - /backend/alembic/versions/XXXX_seed_initial_data.py
+
+  ---
+  📦 FASE 2: Backend - Models e Schemas
+
+  Tarefas:
+
+  1. Criar SQLAlchemy Models
+    - SidebarMenu (em /backend/app/models/__init__.py)
+    - SidebarSubmenu
+    - SidebarRoute
+    - UserPermission
+    - RolePermission (association table)
+  2. Criar Pydantic Schemas
+    - /backend/app/schemas/sidebar.py:
+        - SidebarMenuResponse, SidebarSubmenuResponse, SidebarRouteResponse
+      - SidebarResponse (hierárquico completo)
+    - /backend/app/schemas/permission.py:
+        - PermissionResponse, PermissionCreate, PermissionUpdate
+  3. Adicionar relacionamentos
+    - user_roles.permissions → relationship many-to-many com user_permissions
+    - sidebar_menus.submenus → relationship one-to-many
+    - sidebar_submenus.routes → relationship one-to-many
+
+  Arquivos:
+  - /backend/app/models/__init__.py
+  - /backend/app/schemas/sidebar.py (novo)
+  - /backend/app/schemas/permission.py (novo)
+
+  ---
+  📦 FASE 3: Backend - Autorização com Permissions
+
+  Tarefas:
+
+  1. Criar novo dependency require_permission()
+    - /backend/app/api/deps.py:
+  def require_permission(required_permissions: List[str]):
+      async def permission_checker(
+          current_user: User = Depends(get_current_user),
+          db: Session = Depends(get_db)
+      ) -> User:
+          # Buscar permissions do user via role
+          user_permissions = db.query(UserPermission).join(...).filter(...).all()
+          permission_names = [p.name for p in user_permissions]
+
+          # Verificar se tem ALGUMA das permissions requeridas
+          if not any(perm in permission_names for perm in required_permissions):
+              raise HTTPException(403, detail=f"Permissões requeridas: {required_permissions}")
+
+          return current_user
+      return permission_checker
+  2. Substituir require_role() por require_permission()
+    - /backend/app/api/routes/admin_users.py:
+  # ANTES:
+  @router.get("")
+  async def list_users(
+      current_user: User = Depends(require_role(['admin', 'manager'])),
+      ...
+  ):
+
+  # DEPOIS:
+  @router.get("")
+  async def list_users(
+      current_user: User = Depends(require_permission(['users.list'])),
+      ...
+  ):
+  3. Atualizar TODAS as rotas administrativas
+    - GET /admin/users → require_permission(['users.list'])
+    - GET /admin/users/{id} → require_permission(['users.view'])
+    - POST /admin/users → require_permission(['users.create'])
+    - PUT /admin/users/{id} → require_permission(['users.update'])
+    - DELETE /admin/users/{id} → require_permission(['users.delete'])
+    - POST /admin/users/{id}/reset-password → require_permission(['users.reset_password'])
+
+  Arquivos:
+  - /backend/app/api/deps.py (alterar)
+  - /backend/app/api/routes/admin_users.py (alterar)
+  - /backend/app/api/routes/user_roles.py (alterar para permissions de roles)
+
+  ---
+  📦 FASE 4: Backend - API de Sidebar Dinâmico
+
+  Tarefas:
+
+  1. Criar rota GET /api/sidebar
+    - /backend/app/api/routes/sidebar.py (novo):
+  @router.get("/sidebar", response_model=SidebarResponse)
+  async def get_user_sidebar(
+      current_user: User = Depends(get_current_user),
+      db: Session = Depends(get_db)
+  ):
+      # 1. Buscar permissions do user via role
+      permissions = db.query(UserPermission).join(...).filter(...).all()
+
+      # 2. Buscar routes vinculadas às permissions
+      routes = db.query(SidebarRoute).filter(...).all()
+
+      # 3. Buscar submenus dessas routes
+      submenus = db.query(SidebarSubmenu).filter(...).all()
+
+      # 4. Buscar menus desses submenus
+      menus = db.query(SidebarMenu).filter(...).all()
+
+      # 5. Montar hierarquia
+      return {
+          "menus": [...],
+          "permissions": [p.name for p in permissions]
+      }
+  2. Registrar router no main.py
+  from app.api.routes import sidebar
+  app.include_router(sidebar.router)
+
+  Arquivos:
+  - /backend/app/api/routes/sidebar.py (novo)
+  - /backend/app/main.py (alterar)
+
+  ---
+  📦 FASE 5: Backend - CRUD de Permissões
+
+  Tarefas:
+
+  1. Criar rotas de gerenciamento de permissions
+    - /backend/app/api/routes/permissions.py (novo):
+    - GET /api/permissions - listar todas permissions
+    - POST /api/permissions - criar nova permission
+    - PUT /api/permissions/{id} - atualizar permission
+    - DELETE /api/permissions/{id} - deletar permission
+  2. Criar rotas de vinculação role ↔ permission
+    - POST /api/roles/{role_id}/permissions/{permission_id} - vincular
+    - DELETE /api/roles/{role_id}/permissions/{permission_id} - desvincular
+    - GET /api/roles/{role_id}/permissions - listar permissions de uma role
+
+  Arquivos:
+  - /backend/app/api/routes/permissions.py (novo)
+  - /backend/app/main.py (alterar)
+
+  ---
+  📦 FASE 6: Backend - CRUD de Sidebar
+
+  Tarefas:
+
+  1. Criar rotas de gerenciamento de menus
+    - /backend/app/api/routes/sidebar_admin.py (novo):
+    - GET/POST/PUT/DELETE /api/sidebar/menus
+    - GET/POST/PUT/DELETE /api/sidebar/submenus
+    - GET/POST/PUT/DELETE /api/sidebar/routes
+  2. Proteger com permissions
+    - require_permission(['sidebar.manage'])
+
+  Arquivos:
+  - /backend/app/api/routes/sidebar_admin.py (novo)
+
+  ---
+  📦 FASE 7: Frontend - Context de Permissions
+
+  Tarefas:
+
+  1. Criar PermissionContext
+    - /frontend/src/presentation/contexts/PermissionContext.tsx (novo):
+  interface PermissionContextData {
+    permissions: string[];
+    hasPermission: (permission: string) => boolean;
+    hasAnyPermission: (permissions: string[]) => boolean;
+    hasAllPermissions: (permissions: string[]) => boolean;
+  }
+  2. Buscar permissions no login
+    - Após login, chamar GET /api/sidebar
+    - Armazenar permissions no contexto
+    - Armazenar menus no estado
+  3. Criar hook usePermission()
+  const { hasPermission } = usePermission();
+
+  if (hasPermission('users.create')) {
+    // Renderizar botão "Novo Usuário"
+  }
+
+  Arquivos:
+  - /frontend/src/presentation/contexts/PermissionContext.tsx (novo)
+  - /frontend/src/presentation/hooks/usePermission.ts (novo)
+
+  ---
+  📦 FASE 8: Frontend - Sidebar Dinâmico
+
+  Tarefas:
+
+  1. Alterar componente Sidebar
+    - /frontend/src/presentation/components/Sidebar.tsx:
+    - Remover menus hardcoded
+    - Buscar do contexto de permissions
+    - Renderizar dinamicamente baseado em sidebar.menus
+  2. Criar componente SidebarMenu
+    - Renderiza menu
+    - Renderiza submenus
+    - Renderiza routes
+
+  Arquivos:
+  - /frontend/src/presentation/components/Sidebar.tsx (alterar)
+  - /frontend/src/presentation/components/SidebarMenu.tsx (novo)
+
+  ---
+  📦 FASE 9: Frontend - Proteção de Rotas e UI
+
+  Tarefas:
+
+  1. Criar PermissionProtectedRoute
+    - /frontend/src/presentation/components/PermissionProtectedRoute.tsx:
+  const PermissionProtectedRoute = ({ 
+    children, 
+    requiredPermissions 
+  }: { 
+    children: React.ReactNode;
+    requiredPermissions: string[];
+  }) => {
+    const { hasAnyPermission } = usePermission();
+
+    if (!hasAnyPermission(requiredPermissions)) {
+      return <Navigate to="/unauthorized" replace />;
+    }
+
+    return <>{children}</>;
+  };
+  2. Substituir ProtectedRoute nas rotas
+    - /frontend/src/App.tsx:
+  <Route
+    path="/usuarios/cadastro"
+    element={
+      <PermissionProtectedRoute requiredPermissions={['users.list']}>
+        <UserManagement />
+      </PermissionProtectedRoute>
+    }
+  />
+  3. Proteger elementos da UI
+    - /frontend/src/presentation/pages/UserManagement.tsx:
+  const { hasPermission } = usePermission();
+
+  // Botão "Novo Usuário"
+  {hasPermission('users.create') && (
+    <Button onClick={handleOpenDialog}>Novo Usuário</Button>
+  )}
+
+  // Ícone Editar
+  {hasPermission('users.update') && (
+    <IconButton onClick={handleEdit}><Edit /></IconButton>
+  )}
+
+  // Ícone Deletar
+  {hasPermission('users.delete') && (
+    <IconButton onClick={handleDelete}><Delete /></IconButton>
+  )}
+
+  Arquivos:
+  - /frontend/src/presentation/components/PermissionProtectedRoute.tsx (novo)
+  - /frontend/src/App.tsx (alterar)
+  - /frontend/src/presentation/pages/UserManagement.tsx (alterar)
+
+  ---
+  📦 FASE 10: Frontend - Interface de Gestão de Permissões
+
+  Tarefas:
+
+  1. Criar página de gestão de permissões
+    - /frontend/src/presentation/pages/PermissionManagement.tsx (novo):
+    - Listar todas permissions
+    - Criar nova permission
+    - Editar permission
+    - Deletar permission
+  2. Criar página de vinculação role ↔ permissions
+    - /frontend/src/presentation/pages/RolePermissions.tsx (novo):
+    - Exibir role
+    - Listar permissions disponíveis
+    - Checkbox para vincular/desvincular
+    - Salvar alterações
+  3. Criar API services
+    - /frontend/src/infrastructure/api/permissionService.ts (novo)
+    - /frontend/src/infrastructure/api/sidebarService.ts (novo)
+
+  Arquivos:
+  - /frontend/src/presentation/pages/PermissionManagement.tsx (novo)
+  - /frontend/src/presentation/pages/RolePermissions.tsx (novo)
+  - /frontend/src/infrastructure/api/permissionService.ts (novo)
+  - /frontend/src/infrastructure/api/sidebarService.ts (novo)
+
+  ---
+  📦 FASE 11: Testes e Validação
+
+  Tarefas:
+
+  1. Testar com usuário Admin
+    - Login → Verificar se todas 6 permissions aparecem
+    - Acessar /usuarios/cadastro → Verificar se todos botões aparecem
+    - Criar usuário → Verificar se funciona
+    - Editar, deletar, resetar senha → Verificar funcionamento
+  2. Testar com usuário Viewer
+    - Login → Verificar se apenas 2 permissions aparecem
+    - Acessar /usuarios/cadastro → Verificar se botões CRUD não aparecem
+    - Tentar POST direto → Verificar se retorna 403
+    - Verificar se sidebar tem menos opções
+  3. Testar sidebar dinâmico
+    - Admin → Ver todos menus
+    - Viewer → Ver menus limitados
+  4. Testar gestão de permissions
+    - Criar nova permission
+    - Vincular permission a role
+    - Verificar se usuário ganha acesso
+
+  ---
+  📦 FASE 12: Documentação e Rollout
+
+  Tarefas:
+
+  1. Atualizar documentação
+    - README com nova arquitetura
+    - Diagrama ER atualizado
+    - Guia de criação de novas permissions
+  2. Migration plan
+    - Backup do banco antes
+    - Executar migrations
+    - Validar dados
+    - Rollback plan se necessário
+
+  ---
+  📊 DIAGRAMA COMPLETO DE INTEGRAÇÃO
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                         USER LOGIN                               │
+  └────────────────────────────┬─────────────────────────────────────┘
+                               │
+                               ↓
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                    POST /auth/login                              │
+  │              → Retorna JWT token + user info                     │
+  └────────────────────────────┬─────────────────────────────────────┘
+                               │
+                               ↓
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                    GET /api/sidebar                              │
+  │              (Authorization: Bearer {token})                     │
+  └────────────────────────────┬─────────────────────────────────────┘
+                               │
+                               ↓
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                    BACKEND PROCESSING                            │
+  ├──────────────────────────────────────────────────────────────────┤
+  │  1. Valida JWT → Identifica user                                │
+  │  2. Busca user.role_id → user_roles                              │
+  │  3. JOIN role_permissions → Busca permission_ids                 │
+  │  4. JOIN user_permissions → Busca permissions                    │
+  │  5. JOIN sidebar_routes → Busca routes vinculadas                │
+  │  6. JOIN sidebar_submenus → Busca submenus                       │
+  │  7. JOIN sidebar_menus → Busca menus                             │
+  │  8. Monta hierarquia JSON                                        │
+  └────────────────────────────┬─────────────────────────────────────┘
+                               │
+                               ↓
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                    RESPONSE JSON                                 │
+  ├──────────────────────────────────────────────────────────────────┤
+  │  {                                                               │
+  │    "menus": [                                                    │
+  │      {                                                           │
+  │        "id": "...",                                              │
+  │        "name": "Usuários",                                       │
+  │        "icon": "People",                                         │
+  │        "submenus": [                                             │
+  │          {                                                       │
+  │            "name": "Cadastro",                                   │
+  │            "routes": [                                           │
+  │              {                                                   │
+  │                "path": "/usuarios/cadastro",                     │
+  │                "component": "UserManagement",                    │
+  │                "permissions": ["users.list", "users.view"]       │
+  │              }                                                   │
+  │            ]                                                     │
+  │          }                                                       │
+  │        ]                                                         │
+  │      }                                                           │
+  │    ],                                                            │
+  │    "permissions": ["users.list", "users.view", ...]             │
+  │  }                                                               │
+  └────────────────────────────┬─────────────────────────────────────┘
+                               │
+                               ↓
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                    FRONTEND PROCESSING                           │
+  ├──────────────────────────────────────────────────────────────────┤
+  │  1. Armazena permissions em PermissionContext                    │
+  │  2. Armazena menus em SidebarContext                             │
+  │  3. Renderiza Sidebar dinamicamente                              │
+  │  4. Configura rotas React Router dinamicamente                   │
+  │  5. Protege elementos UI com hasPermission()                     │
+  └────────────────────────────┬─────────────────────────────────────┘
+                               │
+                               ↓
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                    UI RENDERING                                  │
+  ├──────────────────────────────────────────────────────────────────┤
+  │                                                                  │
+  │  ADMIN vê:                          VIEWER vê:                   │
+  │  ├─ Menu "Usuários"                 ├─ Menu "Usuários"           │
+  │  │   └─ Submenu "Cadastro"          │   └─ Submenu "Cadastro"   │
+  │  │       ├─ Botão "Novo Usuário" ✅  │       ├─ Sem botão ❌      │
+  │  │       ├─ Tabela de usuários ✅    │       ├─ Tabela ✅         │
+  │  │       ├─ Ícone Editar ✅          │       ├─ Sem editar ❌     │
+  │  │       ├─ Ícone Deletar ✅         │       ├─ Sem deletar ❌    │
+  │  │       └─ Resetar Senha ✅         │       └─ Sem resetar ❌    │
+  │                                                                  │
+  └──────────────────────────────────────────────────────────────────┘
+
+  ---
+  ✅ RESUMO DO PLANO
+
+  | Fase | Descrição           | Arquivos Impactados             | Complexidade |
+  |------|---------------------|---------------------------------|--------------|
+  | 1    | Migrations DB       | 3 novos arquivos                | Média        |
+  | 2    | Models e Schemas    | 3 arquivos alterados, 2 novos   | Média        |
+  | 3    | Autorização Backend | 2 arquivos alterados            | Alta         |
+  | 4    | API Sidebar         | 2 arquivos (1 novo, 1 alterado) | Média        |
+  | 5    | CRUD Permissions    | 2 arquivos (1 novo, 1 alterado) | Baixa        |
+  | 6    | CRUD Sidebar        | 1 arquivo novo                  | Baixa        |
+  | 7    | Permission Context  | 2 arquivos novos                | Média        |
+  | 8    | Sidebar Dinâmico    | 2 arquivos (1 alterado, 1 novo) | Média        |
+  | 9    | Proteção UI         | 3 arquivos alterados            | Alta         |
+  | 10   | Interface Gestão    | 4 arquivos novos                | Média        |
+  | 11   | Testes              | -                               | Alta         |
+  | 12   | Documentação        | README, diagramas               | Baixa        |
+
+  Total de Arquivos:
+  - Novos: ~15 arquivos
+  - Alterados: ~10 arquivos
+  - Estimativa de Tempo: 3-5 dias de desenvolvimento + 1-2 dias de testes
+
+  ---
+  🎯 BENEFÍCIOS DA NOVA ARQUITETURA
+
+  ✅ Permissões Granulares: Controle fino sobre cada ação✅ Sidebar Dinâmico: Usuário vê apenas o que pode acessar✅ Escalável: Fácil adicionar novos
+   menus/permissions✅ Auditável: Histórico de quem tem acesso ao quê✅ Flexível: Admin pode criar/remover permissions via UI✅ Segurança: Frontend e
+   backend validam permissions✅ UX Melhorada: Usuário não vê opções que não pode usar
+
+  ---
+  ⚠️ CONSIDERAÇÕES E RISCOS
+
+  🔴 Complexidade: Sistema mais complexo que RBAC simples🔴 Performance: Joins adicionais no DB para cada request🔴 Migração: Dados existentes
+  precisam ser migrados corretamente🔴 Testes: Necessário testar todas combinações de permissions🔴 Documentação: Equipe precisa entender nova
+  arquitetura
+
+  Mitigações:
+  - Cache de permissions no backend (Redis)
+  - Índices no DB para otimizar queries
+  - Testes automatizados para permissions
+  - Documentação completa com diagramas
+
+  ---
+  Estou aguardando sua autorização para prosseguir com a implementação!
+
+
+
+
+O CRUD de Permissões(permissions) teria, Direito (dropdown menu de role), Menu (dropdown de sidebar_menu), SubMenu (dropdown menu de sidebar_submenus referente ao sidebar_menu associado) e as Permissões (dropdown menu de permissions com check box de multipla seleção de View, Create, Edit and Delete). Assim por exemplo eu vou poder definir para um Direito (role) os Submenu que ele terá acesso e as permissões deste Submenu e as rotas você irá criar baseado nas permissões que eu defini. Me ilustre seu entendimento. 
+
+
+create_by, create_at, update_ate delete_at
+
+em configuracoes/empresas precisa ser criado um CRUD completo para Empresas(companies) com a seguinte estrutura:
+
+*** Dados Cadastrais Principais -> aba Principal, crud empresas, tabela empresas
+
+Código interno (integer único )
+Tipo de pessoa (física/jurídica)
+Nome
+Razão social
+Nome fantasia
+CPF
+CNPJ
+Inscrição Estadual (IE)
+Inscrição Municipal (IM)
+
+Status (ativo/inativo/bloqueado)
+
+*** Dados de Contato -> aba Endereço, crud enderecos, tabela enderecos
+Endereços:
+
+Tipo (comercial, residencial, entrega, cobrança)
+Logradouro
+Número
+Complemento
+Bairro
+CEP
+Cidade
+Estado
+País
+Referência para localização
+
+*** Contatos -> aba Contato, crud contatos, tabela contatos
+
+Telefone comercial
+Telefone celular
+WhatsApp
+E-mail Comercial
+E-mail Fiscal
+Website
+
+Pessoas de Contato:
+
+Nome do responsável/contato
+Cargo/Departamento
+Telefone direto
+E-mail
+Observações sobre preferências de contato
+
+Informações Comerciais
+Classificações:
+
+Segmento/Ramo de atividade
+Porte da empresa (MEI, ME, EPP, etc.)
+Categoria (A, B, C, D - por volume ou relevância)
+Origem (indicação, prospecção, etc.)
+Vendedor/Comprador responsável
+Filial/Matriz responsável pelo atendimento
+
+Condições Comerciais:
+
+Forma de pagamento preferencial
+Prazo de pagamento
+Limite de crédito
+Dia de vencimento preferencial
+Desconto padrão
+Tabela de preços aplicável
+Transportadora preferencial
+Tipo de frete (CIF/FOB)
+
+Informações Fiscais
+Dados Tributários:
+
+Regime tributário (Simples, Lucro Real, Lucro Presumido)
+Contribuinte ICMS (sim/não)
+Isento de IE (sim/não)
+Suframa (para Zona Franca)
+CNAE principal
+Alíquota de ISS
+Retenções fiscais aplicáveis
+
+Configurações de NF-e:
+
+Indicador de IE do destinatário
+Regime especial de tributação
+Observações fiscais padrão para nota
+
+Dados Bancários
+
+Banco
+Agência
+Número da conta
+Tipo de conta (corrente/poupança)
+PIX (chave e tipo)
+Favorecido (titular da conta)
+
+Informações Específicas para Fornecedores
+
+Produtos/Serviços fornecidos
+Prazo de entrega médio
+Pedido mínimo
+Lote econômico
+Avaliação de qualidade
+Certificações (ISO, etc.)
+Contrato vigente (número, validade)
+SLA acordado
+
+Informações Específicas para Clientes
+
+Data da primeira compra
+Data da última compra
+Frequência de compra
+Ticket médio
+Total comprado (histórico)
+Produtos de interesse
+Profissão (para óticas: médico, optometrista, etc.)
+CRM (registro profissional)
+Aniversário (para ações comerciais)
+Preferências de comunicação
+
+Informações Complementares
+Documentação:
+
+Contrato social
+Documentos de identificação
+Comprovante de endereço
+Referências comerciais
+Certidões negativas
+
+Observações e Histórico:
+
+Observações gerais
+Restrições ou cuidados especiais
+Histórico de interações
+Reclamações/Elogios
+Motivo de inativação (se aplicável)
+
+
+      29  
+      30 -    public void Update(string nome, string descricao)                                                                                                   
+      30 +    public void Update(string tipo, string nome)                                                                                                        
+      31      {
+      32 +        Tipo = tipo;                                                                                                                                    
+      33          Nome = nome;
+      33 -        Descricao = descricao;                                                                                                                          
+      34      }
+      35  }
+
+
+
+Enter each option in a separate line. To differentiate between label and value, separete then with a pipe
+
+
+
+
+/tarefa assim como você fez com os módulos Compras, Estoque e Vendas, faça uma extensa pesquina pesquisa na internet para podermos implementar o módulo Financeiro em nosso ERP Enterprise genérico. Lembre-se das integrações entre os módulos Compras, Vendas e Estoque. Crie uma documentação detalhada na pasta modulo_finenceiro.                                                                                                                          
+⏺ CHECKLIST OBRIGATÓRIO                                                                                                                     
+                                         
+  1. ENTENDIMENTO                                                                                                                           
+                                                                                                                                            
+  Você quer uma pesquisa extensa na internet sobre módulo financeiro para ERP Enterprise genérico, seguindo o mesmo formato e profundidade  
+  dos documentos já criados para Compras (MODULO-COMPRAS-PESQUISA.md), Vendas (MODULO-VENDAS-PESQUISA.md) e Estoque
+  (MODULO-ESTOQUE-PESQUISA.md). A documentação deve considerar as integrações com os 3 módulos já implementados e ser criada na pasta
+  docs/modulo_financeiro/.
+
+  2. DOCUMENTAÇÃO
+
+  Já obtive na pesquisa anterior os seguintes dados relevantes:
+
+  - PLANO-ERP-GENERICO.md — Define 4 entidades financeiras: ContaReceber, ContaPagar, PlanoConta, MovimentacaoCaixa (Fase 5)
+  - MODULO-COMPRAS-PESQUISA.md — 16 seções, formato de referência para a pesquisa
+  - MODULO-VENDAS-PESQUISA.md — 13 seções, formato de referência
+  - MODULO-ESTOQUE-PESQUISA.md — 4 fases, formato de referência
+  - Domínios existentes: FormaPagamento (8 seeds), CondicaoPagamento (12 seeds)
+  - Integrações: FaturamentoVenda → gera Contas a Receber; RecebimentoMercadoria → gera Contas a Pagar; ComissaoVenda → pagamento de
+  comissões
+
+  3. ARQUIVOS ENVOLVIDOS
+
+  - LER:
+    - docs/PLANO-ERP-GENERICO.md (seção Financeiro)
+    - docs/modulo_compras/MODULO-COMPRAS-PESQUISA.md (formato + integrações)
+    - docs/modulo_vendas/MODULO-VENDAS-PESQUISA.md (formato + integrações)
+    - Entidades existentes: FormaPagamento, CondicaoPagamento, FaturamentoVenda, ComissaoVenda, OrdemCompra
+  - CRIAR:
+    - docs/modulo_financeiro/MODULO-FINANCEIRO-PESQUISA.md — Documento principal de pesquisa
+
+  4. PLANO DE AÇÃO
+
+  1. Pesquisar na internet — módulos financeiros de ERPs brasileiros (TOTVS, Omie, Bling, ContaAzul, SAP B1), melhores práticas, entidades,
+  workflows, requisitos fiscais brasileiros (CNAB, PIX, boleto, SPED ECD, DRE)
+  2. Ler as pesquisas existentes dos módulos Compras e Vendas para manter formato consistente
+  3. Ler entidades existentes no backend para mapear pontos de integração
+  4. Compilar documento MODULO-FINANCEIRO-PESQUISA.md com ~15 seções cobrindo:
+    - Entidades propostas (mestres, transacionais, suporte, domínios)
+    - Campos chave detalhados
+    - Workflows e ciclos de vida
+    - Integração Compras↔Financeiro, Vendas↔Financeiro, Estoque↔Financeiro
+    - Contas a Pagar/Receber (parcelas, juros, multas)
+    - Conciliação bancária (OFX, CNAB)
+    - Fluxo de caixa (realizado vs projetado)
+    - Plano de Contas (hierárquico, padrão CPC/IFRS)
+    - Centro de Custo
+    - DRE
+    - Tesouraria (contas bancárias, transferências)
+    - Integrações bancárias (PIX, boleto, CNAB remessa/retorno)
+    - Requisitos fiscais brasileiros
+    - Especificidades do setor óptico
+    - Comparativo com ERPs de referência
+    - Fases de implementação recomendadas
+    - Dashboard e KPIs
+
+
+
+
+
+
+
+
+assim como você fez com os módulos Compras, Estoque, Vendas e Financeiro, faça uma extensa pesquisa na internet para podermos implementar o módulo Fiscal em nosso ERP Enterprise genérico. Lembre-se das integrações entre módulos. Crie uma documentação detalhada na pasta modulo_fiscal.
+
+
+
+
+tarefa baseado nas documentacoes que vocë acavbou de criar vamos iniciar a implantacao do modulo Financeiro.Me ilustre seu intendimento
+
+
+sim, pode começar pela Fase 1, mantendo a integracao entre modulos
+
+
+
+financeiro/dashboard você precisa criar um padrão para isso, pois o nome correteo não é financeiro/dashboard mas sim financeiro/painel e precisa ser o primeiro item do menu
+
+
+
+vamos implementar a Fase 1 (MVP) do módulo Fiscal, não esquecendo das integrações entre módulos
+
+
+Módulo de Produtos, é o módulo que gerencia todos os produtos vendáveis, neste módulo teremos:
+- Painel, um dashboard com KPI's
+- Produto Acabado, um crud completo com campos codigo, nome, descrição, valor...
+- Roteiro de Fabricação, um crud completo onde iremos definir quais matérias primas do estoque serão utilizadas para a fabricação de um Produto Acabado
+- 
+
+
+Produto Acabado(PA) contém um Roteiro de Fabricação(RF) que contém Matéria Prima + Serviço
+
+Produto Acabado(PA)
+      ---> Roteiro de Fabricação(RF)
+            ---> Estoque  -> Matéria Prima
+                 Produção -> Serviço
+
+Exemplos:
+
+Exatik One 1.50 (Multifocal Digital)
+      ---> Roteiro Exatik One
+            ---> Estoque separa matéria prima 'Bloco Camber 1.50'
+                 Produção aplica o Serviço de Surfaçagem
+
+Prolight 1.60 Super Hidrofóbica (Lente Pronta)
+      ---> Roteiro Lente Pronta
+            ---> Estoque separa lente pronta
+
+
+
+
+
+Modulo de Produção, é o módulo que gerencia todo o processo de produção que transforma um materia prima em estoque em um produto fabricado vendável.
+
+O processo de produção de uma lente oftálmica acabada a partir de um bloco é a transformação de uma peça bruta de resina ou vidro (bloco) na lente final personalizada com a dioptria (grau) receitada pelo médico oftalmologista. Esse processo é realizado em laboratórios ópticos de alta precisão. 
+
+Dentro do Departamento de Produção, para que o pedido possa ser rastreado, existem vários Sub-Departamentos chamados Células e em um Roteiro de Produção completo o pedido pode passar pelas seguintes Células (1 a 10):
+
+
+1. Pedido de Produção
+Entrada do pedido do cliente para o laboratório produzir
+
+2. Aprovação Financeira
+Consulta se o cliente não possui restrições financeiras como cliente inadimplente
+
+3. Aprovação do Pedido
+Verifica se todos os dados do pedido estão corretos para enviar a produção
+
+4. Cálculo
+As informações do pedido são digitadas em um software externo chamado 'Lensware' onde as informações são transformadas 
+
+5. Estoque
+A matéria prima é separada e colocada em uma caixa específica para produção chamada JitBox
+
+6. Inspeção
+Com a matéria prima e o jitbox definido, uma inspeção geral é feita para certificar a qualidade
+
+8. Blocagem (Fixação)
+A lente é fixada em um suporte metálico (bloco) usando uma liga metálica ou cera especial. Esta etapa é crucial para que a máquina de corte possa segurar a lente com precisão e criar a curvatura correta na face interna.
+
+9. Surfaçagem (Corte/Geração de Curva)
+Esta é a etapa principal, realizada por geradores de alta precisão (computadorizados).
+
+Corte: A máquina desbasta a face interna do bloco, gerando a curva interna e reduzindo o diâmetro e a espessura conforme o cálculo da receita.
+Tecnologia Freeform: Em lentes mais modernas, o corte é feito ponto a ponto com ponta de diamante, garantindo alta precisão.
+
+4. Polimento
+Após o corte, a lente está opaca. Ela passa por máquinas cilíndricas de polimento que, utilizando lixas especiais e pasta de polimento, removem as ranhuras do corte e tornam a superfície totalmente transparente e lisa.
+
+5. Marcação Indelével
+Utilizando um equipamento de marcação a laser, a lente recebe a marcação para certificar que a lente é o produto correto
+
+5. Deblocagem e Lavagem
+A lente é removida do suporte de metal (deblocagem) e lavada para retirar resíduos de polimento.
+
+6. Inspeção Final
+A lente é conferida no lensômetro e/ou mapeador para verificar a dioptria esférica, cilíndrica e o eixo.
+
+7. Triagem
+Neste momento o jitbox com a lente podem ser redirecionados de acordo com o pedido.
+Exemplos:
+Se no pedido do cliente a lente possuir Tratanento então o jitbox é trocado por um outro jitbox específico para Tratamento e é encamilhado ao nível 8
+
+Se no pedido do cliente a lente possuir Tratanento e Montagem então o jitbox é trocado por um outro jitbox específico para Tratamento, depois com o termino do tratamento ele retorna ao nivel 7, retorna ao jitbox original e é encamilhado ao nível 9
+
+8. Tratamentos (Opcionais, mas comuns)
+A lente pronta pode passar por tratamentos antes de ser montada:
+Antirreflexo/Antirrisco: Aplicação de camadas funcionais.
+Proteção UV e Luz Azul.
+
+9. Facetagem(corte no desenho da armação) e Montagem
+A lente, agora acabadaé cortada (facetada) na forma da armação e montada
+
+10. Expedição
+Neste momento há uma verificação da qualidade do produto acabado, é desvinculado o jitbox do pedido, um certificado de garantia em cartão pvc é impresso e o faturamento é realizado com a impressão da nota fiscal
+
+Todo esse processo precisa ser rastreado, cada uma das 10 etapas precisa ter apontamento de produção, tanto de inicio de processo quanto de termino.
+
+
+
+
+
+
+
+
+
+
+Produto Fabricado (nível 0, ícone PrecisionManufacturing ou Build)
+  Painel → /produto-fabricado/painel — dashboard com KPIs do módulo
+  Produtos fabricados → /produto-fabricado/produtos — lista/cadastro de produtos fabricados e vínculo com BOM
+  Listas de Materiais → /produto-fabricado/listas-materiais — cadastro de BOMs e itens
+Explosão de necessidades → /produto-fabricado/explosao-necessidades — tela produto + quantidade → necessidade de MP
+Roteiros de produção → /produto-fabricado/roteiros — opcional
+
+
+
+
+
+
+Me faça um manual ilustrando o passo a passo do fluxo completo deste a venda até a emissão da nota fiscal, pois que quero testar cada etapa.
+
+
+Em vendas/faturamentos-venda na seção 'Documento Fiscal' existem 5 campos. Eu preciso preencher estes campos?
+
+
+Precisamos corrigir/reformular o módulo de vendas para que funcione da seguinte forma:
+
+O fluxo correto entre pedido até sua entrega (logística) é o seguinte:
+
+- vendas/pedidos-venda -> Eu faço um Pedido de Venda e o pedido recebe o status = pedido;
+
+- vendas/pedido-aprovacoes -> Os pedidos com status = pedido são listados para eu fazer a aprovação e o pedido ganha o status = aprovado;
+
+- vendas/faturamentos-venda -> Os pedidos com status = aprovado aparecem para eu fazer o faturamento e o pedido ganha o status = faturado;
+
+- fiscal/notas-fiscais -> Os pedidos com status = faturado aparecem para eu emitir a nota fiscal e depois que a nota fiscal for emitida o pedido ganha o status = expedido;
+
+- vendas/entregas-venda -> Os pedidos com status = expedido aparecem para eu fazer a logistica de entrega;
+
+Me ilustre em uma arvore hierarquica seu entendimento.
+
+
+
+
+PEDIDO DE VENDA (entidade central — status evolui ao longo do fluxo)
+│
+├── 1. CRIAÇÃO ─────────── vendas/pedidos-venda
+│   └── Status: Pedido
+│       (Vendedor cria o pedido com itens, cliente, condições)
+│
+├── 2. APROVAÇÃO ────────── vendas/pedido-aprovacoes
+│   └── Status: Pedido → Aprovado
+│       (Gestor/supervisor revisa e aprova pedidos pendentes)
+│   *** vendas/pedido-aprovacoes esta página já existe e precisa se reformulada
+│
+├── 3. FATURAMENTO ──────── vendas/faturamentos-venda
+│   └── Status: Aprovado → Faturado
+│       (Financeiro gera o faturamento do pedido aprovado)
+│
+├── 4. NOTA FISCAL ──────── fiscal/notas-fiscais
+│   └── Status: Faturado → Expedido
+│       (Fiscal emite a NF-e e o pedido avança para expedição)
+│
+└── 5. ENTREGA ──────────── vendas/entregas-venda
+    └── Status: Expedido → Entregue
+        (Logística realiza a entrega ao cliente)
+
+Precisamos reformular totalente vendas/faturamentos-venda, essa entidade precisa ser da seguinte forma:
+
+
+
+
+** FLUXO TOTAL **
+
+Abaixo ilustro o fluxo total desde a entrada do pedido na empresa até a sua entrega ao cliente:
+
+├── 1. CRIAÇÃO ─────────── vendas/pedidos-venda
+│   └── Status: Pedido
+│       (Vendedor cria o pedido com itens, cliente, condições)
+│
+├── 2. APROVAÇÃO ────────── vendas/pedido-aprovacoes
+│   └── Status: Pedido → Aprovado
+│       (Gestor/supervisor revisa e aprova pedidos pendentes)
+│   *** vendas/pedido-aprovacoes esta página já existe e precisa se reformulada
+│
+├── 3. PRODUÇÃO ──────── vendas/faturamentos-venda
+│   └── Status: Aprovado → Faturado
+│       (Financeiro gera o faturamento do pedido aprovado)
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+├── 3. FATURAMENTO ──────── vendas/faturamentos-venda
+│   └── Status: Aprovado → Faturado
+│       (Financeiro gera o faturamento do pedido aprovado)
+│
+├── 4. NOTA FISCAL ──────── fiscal/notas-fiscais
+│   └── Status: Faturado → Expedido
+│       (Fiscal emite a NF-e e o pedido avança para expedição)
+│
+└── 5. ENTREGA ──────────── vendas/entregas-venda
+    └── Status: Expedido → Entregue
+        (Logística realiza a entrega ao cliente)
+
+
+
+
+
+
+
+
+
+atualize sua memoria/documentação para sempre use DatGrid como padrão
+
+
+
+active
+created_by
+created_at
+updated_by
+updated_at
+deleted_by
+deleted_at
+is_deleted
+
+
+ELEVADOR JIMS 3472 1172 -208.4
+ELEVADOR TUNNEL  2111 1829 -172
+ELEVADOR W
+
+
+Airwear PolyPower
+Airwear PolyPower BluweUV
+Airwear PolyPower +Xperio
+BlueUV
+Orma
+Orma BlueUV
+Orma +Xperio
+Padrão
++Polarizada
++Transitions Gen S
++Transitions Gen S BlueUV
++Transitions Extractive
++Transitions Extractive BlueUV
+Stylis
+Stylis BlueUV
+
+⏺ CHECKLIST
+
+  1. ENTENDIMENTO
+
+  Implementar um sistema de chat em tempo real dentro do OpticalCore, estilo WhatsApp, onde:
+  - Usuários de diferentes empresas (tenants) possam conversar entre si
+  - Mensagens em tempo real (WebSocket)
+  - Conversas 1:1 (diretas) e possivelmente grupos
+  - Histórico de mensagens persistido
+  - Indicadores de online/offline, lido/não lido
+  - Integrado ao layout existente (sidebar ou painel flutuante)
+
+  2. DOCUMENTAÇÃO
+
+  Consultei docs/MULTI_TENANT_ARCHITECTURE.md — o chat é cross-tenant (público), pois usuários de empresas diferentes conversam entre si.
+  As tabelas devem ficar no schema public (não nos schemas tenant).
+
+  3. ARQUIVOS ENVOLVIDOS
+
+  BACKEND (criar):
+  - Domain/Entities/Chat/ — Conversa, Mensagem, ConversaParticipante
+  - Infrastructure/Hubs/ChatHub.cs — SignalR Hub
+  - Infrastructure/Services/ChatService.cs — lógica de negócio
+  - API/Controllers/ChatController.cs — endpoints REST
+  - Migration para tabelas chat
+
+  FRONTEND (criar):
+  - presentation/pages/chat/ — ChatPage, componentes
+  - infrastructure/api/chatService.ts — API + SignalR client
+  - domain/chat/chat.types.ts — types
+
+  MODIFICAR:
+  - Program.cs — registrar SignalR
+  - DependencyInjection.cs — registrar ChatService
+  - AppRoutes.tsx, Sidebar.tsx, MainLayout.tsx — rota do chat
+
+  4. PROPOSTA DE SOLUÇÃO
+
+  ---
+  Arquitetura: Chat Real-Time com SignalR
+
+  Stack Tecnológica
+
+  ┌──────────────┬───────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────┐
+  │    Camada    │        Tecnologia         │                                         Motivo                                          │
+  ├──────────────┼───────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Real-time    │ SignalR (.NET nativo)     │ WebSocket bidirecional, já integrado ao ASP.NET Core, suporta fallback (Long Polling,   │
+  │              │                           │ SSE)                                                                                    │
+  ├──────────────┼───────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Persistência │ PostgreSQL (schema        │ Cross-tenant, já temos o banco                                                          │
+  │              │ public)                   │                                                                                         │
+  ├──────────────┼───────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Frontend     │ @microsoft/signalr        │ Client oficial para React/TypeScript                                                    │
+  ├──────────────┼───────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ UI           │ MUI                       │ Consistente com o resto da app                                                          │
+  └──────────────┴───────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Modelo de Dados (schema public)
+
+  chat_conversas
+  ├── id (UUID, PK)
+  ├── tipo (varchar: "direta" | "grupo")
+  ├── nome (varchar?, só para grupos)
+  ├── avatar_url (varchar?, só para grupos)
+  ├── created_at, updated_at
+
+  chat_participantes
+  ├── id (UUID, PK)
+  ├── conversa_id (FK → chat_conversas)
+  ├── usuario_id (FK → public.usuarios)
+  ├── ultima_leitura_at (timestamp)  ← para marcar "lido até aqui"
+  ├── silenciado (bool)
+  ├── created_at
+
+  chat_mensagens
+  ├── id (UUID, PK)
+  ├── conversa_id (FK → chat_conversas)
+  ├── remetente_id (FK → public.usuarios)
+  ├── conteudo (text)
+  ├── tipo (varchar: "texto" | "imagem" | "arquivo")
+  ├── arquivo_url (varchar?)
+  ├── editada (bool)
+  ├── removida (bool)  ← soft delete
+  ├── created_at
+  ├── INDEX (conversa_id, created_at DESC)
+
+  Fluxo Real-Time (SignalR)
+
+  Usuário A digita mensagem
+    → Frontend: hubConnection.invoke("EnviarMensagem", conversaId, conteudo)
+      → Backend SignalR Hub: salva no PostgreSQL
+        → Hub.Clients.Group(conversaId).SendAsync("NovaMensagem", mensagemDto)
+          → Frontend Usuário B: recebe em tempo real via WebSocket
+
+  Eventos SignalR:
+
+  ┌────────────────┬──────────────────────────┬───────────────────────────────────┐
+  │     Evento     │         Direção          │             Descrição             │
+  ├────────────────┼──────────────────────────┼───────────────────────────────────┤
+  │ EnviarMensagem │ Client → Server          │ Envia mensagem                    │
+  ├────────────────┼──────────────────────────┼───────────────────────────────────┤
+  │ NovaMensagem   │ Server → Client          │ Recebe mensagem nova              │
+  ├────────────────┼──────────────────────────┼───────────────────────────────────┤
+  │ Digitando      │ Client → Server → Client │ Indicador "está digitando..."     │
+  ├────────────────┼──────────────────────────┼───────────────────────────────────┤
+  │ MensagemLida   │ Client → Server → Client │ Marca como lida (double check ✓✓) │
+  ├────────────────┼──────────────────────────┼───────────────────────────────────┤
+  │ UsuarioOnline  │ Server → Client          │ Status online/offline             │
+  └────────────────┴──────────────────────────┴───────────────────────────────────┘
+
+  Layout Frontend (estilo WhatsApp)
+
+  ┌─────────────────────────────────────────────────────┐
+  │ Sidebar  │  Lista Conversas  │  Chat Ativo          │
+  │ (nav)    │                   │                       │
+  │          │ 🔍 Buscar...      │ ┌─────────────────┐  │
+  │          │                   │ │ Header: Nome +   │  │
+  │          │ ┌───────────────┐ │ │ status online    │  │
+  │          │ │ João (Ótica X)│ │ ├─────────────────┤  │
+  │          │ │ Oi, tudo bem? │ │ │                  │  │
+  │          │ │ 14:30    ✓✓   │ │ │  Mensagens       │  │
+  │          │ ├───────────────┤ │ │  (scroll)        │  │
+  │          │ │ Maria (Lab Y) │ │ │                  │  │
+  │          │ │ Pedido pronto │ │ │  Bolhas estilo   │  │
+  │          │ │ 13:15    ✓    │ │ │  WhatsApp        │  │
+  │          │ └───────────────┘ │ │                  │  │
+  │          │                   │ ├─────────────────┤  │
+  │          │                   │ │ 📎 [  Digite...] │  │
+  │          │                   │ │            Enviar│  │
+  │          │                   │ └─────────────────┘  │
+  └─────────────────────────────────────────────────────┘
+
+  Opção A — Página dedicada (/chat): Tela cheia com 2 painéis (lista + conversa)
+  Opção B — Floating widget: Ícone de chat no canto inferior direito que abre um painel flutuante (como Intercom/Zendesk)
+  Opção C — Ambos: Página dedicada + badge no sidebar com contador de não lidas
+
+  Funcionalidades por Fase
+
+  Fase 1 — MVP:
+  - Conversas 1:1 (diretas)
+  - Mensagens de texto em tempo real
+  - Lista de conversas com última mensagem
+  - Indicador online/offline
+  - Badge de não lidas no sidebar
+  - Busca de usuários para iniciar conversa
+
+  Fase 2 — Avançado:
+  - Conversas em grupo
+  - Envio de arquivos/imagens
+  - Indicador "digitando..."
+  - Double check (✓ enviado, ✓✓ lido)
+  - Notificações push (browser)
+  - Editar/apagar mensagem
+
+  Fase 3 — Profissional:
+  - Reações em mensagens (emoji)
+  - Responder mensagem específica (quote)
+  - Fixar mensagem no topo
+  - Busca dentro das conversas
+  - Exportar histórico
+
+  Considerações Técnicas
+
+  - Cross-tenant: Tabelas no schema public, SEM filtro de tenant
+  - Autenticação: SignalR usa o mesmo JWT do sistema — [Authorize] no Hub
+  - Performance: Paginação de mensagens (carregar 50 por vez, scroll-up carrega mais)
+  - Persistência de conexão: SignalR reconnect automático com retry exponencial
+
+  ---
+
+
+
+
+
+
+
+
+
+⏺ CHECKLIST — Chat em Tempo Real (Fase 1 — MVP)
+                                                                                                                                           
+  ---                                                                                                                                      
+  1. ENTENDIMENTO
+                                                                                                                                           
+  Implementar um sistema de chat em tempo real (estilo WhatsApp) que permita qualquer usuário do sistema conversar com qualquer outro 
+  usuário, independente da empresa (cross-tenant). A Fase 1 cobre:                                                                         
+                                                            
+  - Conversas 1:1 (diretas entre dois usuários)                                                                                            
+  - Mensagens de texto em tempo real via WebSocket (SignalR)
+  - Indicador online/offline (presença)                                                                                                    
+  - Badge de mensagens não lidas (no Sidebar)                                                                                              
+  - Busca de usuários para iniciar conversa                                                                                                
+  - Tabelas no schema public (chat é cross-tenant por natureza)                                                                            
+                                                                                                                                           
+  ---                                                                                                                                      
+  2. DOCUMENTAÇÃO                                                                                                                          
+                                                            
+  Vou consultar a arquitetura multi-tenant e a estrutura existente.
+                                                                                                                                           
+⏺ Explore(Explore architecture for chat)
+  ⎿  Done (10 tool uses · 70.1k tokens · 36s)                                                                                              
+  (ctrl+o to expand)                                                                                                                       
+                                                                                                                                  
+⏺ Documentação relevante consultada:                                                                                                       
+  - MULTI_TENANT_ARCHITECTURE.md — Chat será no schema public (cross-tenant)                                                               
+  - Program.cs — Pipeline de middleware para inserir SignalR após MapControllers()                                                         
+  - DependencyInjection.cs — Padrão para registrar novos services                                                                          
+  - Sidebar.tsx — Estrutura para adicionar badge de não lidas                                                                              
+  - MainLayout.tsx — Layout para integrar o chat (floating widget ou página)                                                               
+                                                                                                                                           
+  ---                                                                                                                                      
+  3. ARQUIVOS ENVOLVIDOS                                                                                                                   
+                                                                                                                                           
+  LER (contexto):                                                                                                                          
+                                                                                                                                           
+  - docs/MULTI_TENANT_ARCHITECTURE.md ✅                    
+  - backend/src/OpticalCore.API/Program.cs ✅                                                                                              
+  - backend/src/OpticalCore.Infrastructure/DependencyInjection.cs ✅                                                                       
+  - frontend/src/presentation/components/layout/Sidebar.tsx ✅
+  - frontend/src/presentation/components/layout/MainLayout.tsx ✅                                                                          
+  - frontend/src/infrastructure/api/index.ts ✅                                                                                            
+  - backend/src/OpticalCore.Infrastructure/Persistence/ApplicationDbContext.cs
+                                                                                                                                           
+  CRIAR (novos):                                            
+                                                                                                                                           
+  Backend (9 arquivos):                                                                                                                    
+                         
+  ┌──────────────────────────────────────────────────────────────┬─────────────────────────────────────────┐                               
+  │                           Arquivo                            │                Descrição                │                               
+  ├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────┤                               
+  │ Domain/Entities/Chat/Conversa.cs                             │ Entidade — conversa entre 2 usuários    │                               
+  ├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────┤
+  │ Domain/Entities/Chat/ConversaParticipante.cs                 │ Entidade — participante de uma conversa │                               
+  ├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────┤                               
+  │ Domain/Entities/Chat/Mensagem.cs                             │ Entidade — mensagem de texto            │                               
+  ├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────┤                               
+  │ Application/Interfaces/IChatService.cs                       │ Interface do service                    │
+  ├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────┤                               
+  │ Infrastructure/Services/ChatService.cs                       │ Implementação (CRUD + lógica)           │
+  ├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────┤                               
+  │ API/Hubs/ChatHub.cs                                          │ SignalR Hub (WebSocket)                 │
+  ├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────┤                               
+  │ Infrastructure/Persistence/Migrations/Application/AddChat.cs │ Migration EF Core                       │
+  └──────────────────────────────────────────────────────────────┴─────────────────────────────────────────┘                               
+                                                            
+  Frontend (8 arquivos):                                                                                                                   
+                                                            
+  ┌─────────────────────────────────────────────────────────┬───────────────────────────────────────┐
+  │                         Arquivo                         │               Descrição               │
+  ├─────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ domain/chat/chat.types.ts                               │ Types TypeScript                      │
+  ├─────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ infrastructure/api/chatService.ts                       │ API service (REST endpoints)          │                                      
+  ├─────────────────────────────────────────────────────────┼───────────────────────────────────────┤                                      
+  │ infrastructure/signalr/chatConnection.ts                │ Conexão SignalR                       │                                      
+  ├─────────────────────────────────────────────────────────┼───────────────────────────────────────┤                                      
+  │ application/contexts/ChatContext.tsx                    │ Context (estado global do chat)       │
+  ├─────────────────────────────────────────────────────────┼───────────────────────────────────────┤                                      
+  │ presentation/pages/chat/ChatPage.tsx                    │ Página principal do chat              │
+  ├─────────────────────────────────────────────────────────┼───────────────────────────────────────┤                                      
+  │ presentation/pages/chat/components/ConversaList.tsx     │ Lista de conversas (sidebar esquerda) │
+  ├─────────────────────────────────────────────────────────┼───────────────────────────────────────┤                                      
+  │ presentation/pages/chat/components/ChatMessages.tsx     │ Área de mensagens                     │
+  ├─────────────────────────────────────────────────────────┼───────────────────────────────────────┤                                      
+  │ presentation/pages/chat/components/UserSearchDialog.tsx │ Dialog de busca de usuários           │
+  └─────────────────────────────────────────────────────────┴───────────────────────────────────────┘                                      
+                                                            
+  MODIFICAR (existentes):                                                                                                                  
+                                                            
+  ┌─────────────────────────────────┬─────────────────────────────────────────────────┐                                                    
+  │             Arquivo             │                    Alteração                    │
+  ├─────────────────────────────────┼─────────────────────────────────────────────────┤                                                    
+  │ backend/OpticalCore.API.csproj  │ Nenhuma — SignalR já vem com ASP.NET Core       │
+  ├─────────────────────────────────┼─────────────────────────────────────────────────┤                                                    
+  │ backend/Program.cs              │ AddSignalR() + MapHub<ChatHub>()                │                                                    
+  ├─────────────────────────────────┼─────────────────────────────────────────────────┤                                                    
+  │ backend/DependencyInjection.cs  │ Registrar IChatService                          │                                                    
+  ├─────────────────────────────────┼─────────────────────────────────────────────────┤                                                    
+  │ backend/ApplicationDbContext.cs │ +3 DbSets (Conversas, Participantes, Mensagens) │
+  ├─────────────────────────────────┼─────────────────────────────────────────────────┤                                                    
+  │ backend/Permissions.cs          │ +Permissions.Chat                               │
+  ├─────────────────────────────────┼─────────────────────────────────────────────────┤                                                    
+  │ frontend/package.json           │ +@microsoft/signalr                             │
+  ├─────────────────────────────────┼─────────────────────────────────────────────────┤                                                    
+  │ frontend/Sidebar.tsx            │ +Badge não lidas + item "Chat"                  │
+  ├─────────────────────────────────┼─────────────────────────────────────────────────┤                                                    
+  │ frontend/MainLayout.tsx         │ +routeTitle para /chat                          │
+  ├─────────────────────────────────┼─────────────────────────────────────────────────┤                                                    
+  │ frontend/AppRoutes.tsx          │ +Rota /chat                                     │
+  └─────────────────────────────────┴─────────────────────────────────────────────────┘                                                    
+                                                            
+  ---                                                                                                                                      
+  4. PLANO DE AÇÃO                                          
+                  
+  Backend
+                                                                                                                                           
+  Passo 1 — Entidades de Domínio (schema public)                                                                                           
+  chat_conversas (PK: Id GUID)                                                                                                             
+  ├── CriadoEm (timestamp)                                                                                                                 
+  ├── UltimaMensagemEm (timestamp, indexado)                                                                                               
+  └── UltimaMensagemTexto (string, preview)                                                                                                
+                                                                                                                                           
+  chat_participantes (PK: Id GUID)                                                                                                         
+  ├── ConversaId (FK → chat_conversas)                                                                                                     
+  ├── UsuarioId (GUID, FK → usuarios)                                                                                                      
+  ├── NaoLidas (int, default 0)                                                                                                            
+  ├── ArquivadoEm (timestamp?, nullable)                                                                                                   
+  └── UNIQUE(ConversaId, UsuarioId)                                                                                                        
+                                                                                                                                           
+  chat_mensagens (PK: Id GUID)                                                                                                             
+  ├── ConversaId (FK → chat_conversas)
+  ├── RemetenteId (GUID)                                                                                                                   
+  ├── Texto (string, max 4000)                              
+  ├── EnviadoEm (timestamp, indexado)
+  ├── LidoEm (timestamp?, nullable)                                                                                                        
+  └── INDEX(ConversaId, EnviadoEm)                                                                                                         
+                                                                                                                                           
+  Passo 2 — ChatService (Application + Infrastructure)                                                                                     
+  - GetConversasAsync(userId) — lista conversas do usuário com preview                                                                     
+  - GetMensagensAsync(conversaId, page, pageSize) — mensagens paginadas                                                                    
+  - EnviarMensagemAsync(conversaId, remetenteId, texto) — salva + retorna DTO                                                              
+  - IniciarConversaAsync(userId1, userId2) — cria conversa 1:1 (ou retorna existente)                                                      
+  - MarcarComoLidaAsync(conversaId, userId) — zera NaoLidas + seta LidoEm                                                                  
+  - BuscarUsuariosAsync(search) — busca por nome/email (cross-tenant)                                                                      
+  - GetPresencaAsync(userIds) — retorna quem está online                                                                                   
+  - GetTotalNaoLidasAsync(userId) — total de não lidas (para badge global)                                                                 
+                                                                                                                                           
+  Passo 3 — SignalR Hub (ChatHub.cs)                                                                                                       
+  Métodos Client → Server:                                                                                                                 
+    SendMessage(conversaId, texto)                                                                                                         
+    MarkAsRead(conversaId)                                                                                                                 
+    JoinConversation(conversaId)                            
+                                                                                                                                           
+  Eventos Server → Client:                                  
+    ReceiveMessage(mensagemDto)                                                                                                            
+    MessageRead(conversaId, leitroId)                       
+    UserOnline(userId)                                                                                                                     
+    UserOffline(userId)                                                                                                                    
+    UnreadCountUpdated(total)                                                                                                              
+                                                                                                                                           
+  - Mapa estático ConcurrentDictionary<Guid, HashSet<string>> para rastrear connectionIds por userId                                       
+  - OnConnectedAsync → adiciona ao mapa + broadcast UserOnline                                                                             
+  - OnDisconnectedAsync → remove do mapa + broadcast UserOffline                                                                           
+                                                                                                                                           
+  Passo 4 — Controller REST (ChatController.cs)                                                                                            
+  - GET /api/chat/conversas — lista conversas               
+  - GET /api/chat/conversas/{id}/mensagens?page=1&pageSize=50 — mensagens                                                                  
+  - POST /api/chat/conversas — iniciar conversa (body: { usuarioDestinoId })
+  - GET /api/chat/usuarios?search= — buscar usuários                                                                                       
+  - GET /api/chat/nao-lidas — total não lidas                                                                                              
+  - POST /api/chat/conversas/{id}/ler — marcar como lidas                                                                                  
+                                                                                                                                           
+  Passo 5 — Migration EF Core                                                                                                              
+                                                                                                                                           
+  Frontend                                                                                                                                 
+                                                                                                                                           
+  Passo 6 — Pacote SignalR + Types                                                                                                         
+  - npm install @microsoft/signalr                          
+  - Types em chat.types.ts                                                                                                                 
+                                                            
+  Passo 7 — ChatContext + SignalR Connection                                                                                               
+  - Context global com estado de conversas, mensagens, presença                                                                            
+  - Conexão SignalR com reconexão automática                                                                                               
+  - Badge de não lidas atualizado em tempo real                                                                                            
+                                                                                                                                           
+  Passo 8 — Página de Chat (layout WhatsApp)                                                                                               
+  ┌────────────────────────────────────────────┐                                                                                           
+  │  Sidebar (300px)   │   Mensagens (flex)    │                                                                                           
+  │ ┌────────────────┐ │ ┌──────────────────┐  │                                                                                           
+  │ │ 🔍 Buscar      │ │ │ Header: Nome     │  │                                                                                           
+  │ ├────────────────┤ │ │ ● Online         │  │                                                                                           
+  │ │ João Silva     │ │ ├──────────────────┤  │                                                                                           
+  │ │ Última msg...  │ │ │                  │  │                                                                                           
+  │ │ ③ 10:30        │ │ │  💬 Mensagens    │  │                                                                                           
+  │ ├────────────────┤ │ │  com scroll      │  │                                                                                           
+  │ │ Maria Souza    │ │ │  infinito        │  │                                                                                           
+  │ │ Ok, combinado  │ │ │                  │  │                                                                                           
+  │ │   09:15        │ │ ├──────────────────┤  │                                                                                           
+  │ └────────────────┘ │ │ [Digite...]  📤  │  │                                                                                           
+  │                    │ └──────────────────┘  │                                                                                           
+  └────────────────────────────────────────────┘                                                                                           
+                                                                                                                                           
+  Passo 9 — Sidebar Badge + Rota                                                                                                           
+  - Item "Chat" no Sidebar com <Badge> de não lidas                                                                                        
+  - Rota /chat no AppRoutes + routeTitle no MainLayout                                                                                     
+                                                                                                                                           
+  ---                                                                                                                                      
+  AGUARDANDO AUTORIZAÇÃO                                                                                                                   
+                                                                                                                                           
+  Posso prosseguir com a implementação?
+
+
+
+
+
+⏺ Solução: Notificações de Mensagem no Chat                                                                                                
+                                                                                                                                           
+  1. ENTENDIMENTO                                                                                                                          
+   
+  Quando um usuário recebe uma mensagem, ele precisa ser notificado visualmente mesmo que não esteja na página do chat ou esteja em outra  
+  conversa. Hoje o SignalR já entrega a mensagem em tempo real, mas não há feedback visual para o destinatário.
+                                                                                                                                           
+  2. ARQUIVOS ENVOLVIDOS                                                                                                                   
+  
+  LER:                                                                                                                                     
+  - frontend/src/application/contexts/ChatContext.tsx (já lido — handler ReceiveMessage)
+  - frontend/src/presentation/components/layout/MainLayout.tsx (onde o ChatProvider está montado)                                          
+  
+  MODIFICAR:                                                                                                                               
+  - frontend/src/application/contexts/ChatContext.tsx — disparar notificação no handler ReceiveMessage
+                                                                                                                                           
+  CRIAR:                                                    
+  - frontend/src/presentation/components/chat/ChatNotification.tsx — componente Snackbar de notificação                                    
+                                                                                                                                           
+  3. PLANO DE AÇÃO
+                                                                                                                                           
+  A solução tem 3 camadas de notificação, do mais simples ao mais completo:                                                                
+                                                                                                                                           
+  ┌───────────────────┬─────────────────────────────────────────────────────────────────┬─────────────────────────────────────────────┐    
+  │      Camada       │                            O que faz                            │                Quando ativa                 │ 
+  ├───────────────────┼─────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤    
+  │ Snackbar (MUI)    │ Toast no canto inferior direito com nome do remetente + preview │ Mensagem recebida E conversa ativa ≠        │ 
+  │                   │  da mensagem + botão "Ver"                                      │ conversa da mensagem                        │ 
+  ├───────────────────┼─────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤    
+  │ Som               │ Toca um som curto de notificação                                │ Junto com o Snackbar                        │ 
+  ├───────────────────┼─────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤    
+  │ Browser           │ Notificação nativa do OS (desktop)                              │ Aba do navegador não está focada            │
+  │ Notification      │                                                                 │ (document.hidden)                           │    
+  └───────────────────┴─────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────┘
+                                                                                                                                           
+  Fluxo:                                                                                                                                   
+  SignalR ReceiveMessage
+    ├── Mensagem é da conversa ativa? → NÃO notifica (já aparece no chat)                                                                  
+    └── Mensagem é de OUTRA conversa?                                                                                                      
+         ├── Snackbar com avatar, nome, preview (truncado 50 chars)                                                                        
+         ├── Som de notificação (AudioContext)                                                                                             
+         └── Se aba não focada → Browser Notification API                                                                                  
+                                                                                                                                           
+  Detalhes do Snackbar:                                                                                                                    
+  - Posição: bottom-right                                                                                                                  
+  - Auto-hide: 5 segundos                                                                                                                  
+  - Botão "Ver" → navega para o chat e abre a conversa                                                                                     
+  - Estilo: Paper com avatar, nome em bold, preview em cinza                                                                               
+  - Empilhável (múltiplas mensagens = múltiplos snackbars com notistack ou fila manual)                                                    
+                                                                                                                                           
+  Som: Gero um beep curto via AudioContext (Web Audio API) — sem arquivo de áudio externo.                                                 
+                                                                                                                                           
+  Browser Notification: Pede permissão na primeira vez. Mostra nome + preview. Click na notificação foca a aba.                            
+                                                                                                                                           
+  Aguardo autorização para implementar.7
+
+
+
+
+
+
+
+
+
+
+
+
+  ⏺ Plano de Implementação — Chat Fase 6 (14 melhorias)
+
+  Vou organizar em 4 lotes agrupados por área técnica, com commits incrementais.
+
+  ---
+  Lote 1 — UX do Input e Mídia (Frontend only)
+
+  Sem backend, baixo risco
+
+  ┌─────┬─────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │  #  │          Melhoria           │                                        Detalhe técnico                                         │
+  ├─────┼─────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 1   │ Preview de imagem no        │ Se file.type.startsWith('image/'), criar URL.createObjectURL(file) e exibir thumbnail no       │
+  │     │ pendingFile                 │ preview bar                                                                                    │
+  ├─────┼─────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 2   │ Timer de gravação de áudio  │ State recordingDuration com setInterval(1s) durante gravação. Exibir mm:ss ao lado do botão    │
+  │     │                             │ Stop                                                                                           │
+  ├─────┼─────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 3   │ Drag & drop de arquivos     │ onDragOver/onDrop na área de mensagens → setPendingFile(file). Visual feedback com overlay     │
+  │     │                             │ "Solte o arquivo aqui"                                                                         │
+  ├─────┼─────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 4   │ Scroll para mensagem        │ Clicar no reply preview dentro do bubble →                                                     │
+  │     │ original (reply)            │ document.getElementById('msg-{id}')?.scrollIntoView() + highlight temporário                   │
+  └─────┴─────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Arquivos: ChatPage.tsx
+  Commit: feat: Chat — preview de imagem, timer de áudio, drag & drop, scroll para reply
+
+  ---
+  Lote 2 — Notificações Inteligentes (Frontend + Backend leve)
+
+  Respeitar mute, configurações do usuário
+
+  ┌─────┬────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────┐
+  │  #  │            Melhoria            │                                       Detalhe técnico                                       │
+  ├─────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 5   │ Silenciar conversa impede      │ NotificationContext: verificar se conversa está silenciada antes de emitir som/browser      │
+  │     │ som/browser notif              │ notification (badge continua)                                                               │
+  ├─────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 6   │ Configurações de notificação   │ Novo state em localStorage: chatNotifSettings = { som: bool, browser: bool, snackbar: bool  │
+  │     │                                │ }. Toggle no header do chat ou menu de configurações                                        │
+  ├─────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 7   │ Retry de mensagens offline     │ Detectar conn.state !== Connected → enfileirar em pendingMessages[] ref → onreconnected     │
+  │     │                                │ callback envia fila                                                                         │
+  └─────┴────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Arquivos: ChatContext.tsx, NotificationContext.tsx, ChatPage.tsx, chatConnection.ts
+  Commit: feat: Chat — notificações inteligentes (mute, configurações, retry offline)
+
+  ---
+  Lote 3 — Menções e Player de Áudio (Frontend + Backend)
+
+  Funcionalidade nova com persistência
+
+  ┌─────┬───────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │  #  │     Melhoria      │                                             Detalhe técnico                                              │
+  ├─────┼───────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 8   │ Menções @usuario  │ Frontend: Autocomplete popup ao digitar @ no input (lista participantes). Backend: Mensagem.MencoesIds   │
+  │     │ em grupo          │ (Guid[]?) para notificação direcionada. Hub: enviar notificação para mencionados mesmo fora da conversa  │
+  ├─────┼───────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 9   │ Player de áudio   │ Substituir <audio controls> por player customizado MUI: barra de progresso (LinearProgress), botão       │
+  │     │ com waveform      │ play/pause, duração. Usar AudioContext para waveform visual                                              │
+  └─────┴───────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Arquivos: ChatPage.tsx, ChatHub.cs, Mensagem.cs, ChatService.cs, chat.types.ts, migration
+  Commit: feat: Chat — menções @usuario + player de áudio customizado
+
+  ---
+  Lote 4 — Perfil, Grupo e Visual (Backend + Frontend)
+
+  Upload de imagens, galeria
+
+  ┌─────┬────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │  #  │      Melhoria      │                                             Detalhe técnico                                             │
+  ├─────┼────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 10  │ Avatar/foto de     │ ApplicationUser.AvatarUrl (string?). Endpoint POST /api/users/avatar (upload). Frontend: Avatar no      │
+  │     │ perfil             │ header, sidebar, chat bubbles                                                                           │
+  ├─────┼────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 11  │ Imagem do grupo    │ Conversa.ImagemUrl já existe no schema. Endpoint PATCH /chat/grupos/{id}/imagem. Frontend: upload no    │
+  │     │                    │ Group Info Dialog                                                                                       │
+  ├─────┼────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 12  │ Galeria de mídia   │ Endpoint GET /chat/conversas/{id}/midia?page&pageSize (filtra mensagens com anexo). Frontend: drawer    │
+  │     │                    │ lateral com grid de imagens/arquivos                                                                    │
+  ├─────┼────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 13  │ Status             │ ApplicationUser.StatusTexto (string?) + StatusTipo (Online/Ocupado/Ausente). Exibir no header da        │
+  │     │ personalizado      │ conversa e lista de contatos                                                                            │
+  ├─────┼────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 14  │ Temas do chat      │ localStorage com chatTheme = { bgColor, bubbleColor }. 5 presets (Claro, Escuro, Azul, Verde, Rosa).    │
+  │     │                    │ Selector no menu da conversa                                                                            │
+  └─────┴────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Arquivos: ApplicationUser.cs, UsersController.cs, ChatController.cs, ChatService.cs, Conversa.cs, ChatPage.tsx, ChatContext.tsx,
+  migration
+  Commit: feat: Chat — avatar, imagem do grupo, galeria de mídia, status, temas
+
+  ---
+  Resumo de impacto
+
+  ┌──────┬─────────┬──────────┬───────────┬───────┐
+  │ Lote │ Backend │ Frontend │ Migration │ Risco │
+  ├──────┼─────────┼──────────┼───────────┼───────┤
+  │ 1    │ ❌      │ ✅       │ ❌        │ Baixo │
+  ├──────┼─────────┼──────────┼───────────┼───────┤
+  │ 2    │ Leve    │ ✅       │ ❌        │ Baixo │
+  ├──────┼─────────┼──────────┼───────────┼───────┤
+  │ 3    │ ✅      │ ✅       │ ✅ (1)    │ Médio │
+  ├──────┼─────────┼──────────┼───────────┼───────┤
+  │ 4    │ ✅      │ ✅       │ ✅ (1)    │ Médio │
+  └──────┴─────────┴──────────┴───────────┴───────┘
+
+  Total: 2 migrations, 14 melhorias, 4 commits
+
+  ---
+
+
+
+
+
+aqui existem varias informações caso você precise consultar https://github.com/EvolutionAPI/evolution-api/issues 
+
+
+
+
+É possivel você limpar todas as mensagens no banco para ficar limpo?
