@@ -1,14 +1,20 @@
 #!/bin/bash
 # bootstrap.sh — clona os 11 repos IndioLab na estrutura correta.
 #
-# Uso: ./bootstrap.sh
-# Precisa ser rodado de DENTRO da pasta indiolab-infrastructure/scripts/.
-# Vai criar/clonar os repos como SIBLINGS de indiolab-infrastructure/.
+# Uso:
+#   ./bootstrap.sh                          # WORK_DIR = /opt/indiolab (default)
+#   INDIOLAB_ROOT=~/work ./bootstrap.sh     # WORK_DIR custom
+#
+# Estrutura criada (em WORK_DIR):
+#   <WORK_DIR>/admin.dev.indiolab.com.br/{admin-api,admin-web}
+#   <WORK_DIR>/chat.dev.indiolab.com.br/{chat-api,chat-web}
+#   <WORK_DIR>/crm.dev.indiolab.com.br/{crm-api,crm-web}
+#   <WORK_DIR>/erp.dev.indiolab.com.br/{erp-api,erp-web}
+#   <WORK_DIR>/shared.dev.indiolab.com.br/{shared-api,shared-ui,shared-web}
 
 set -e
 
-INFRA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-WORK_DIR="$(cd "$INFRA_DIR/.." && pwd)"
+WORK_DIR="${INDIOLAB_ROOT:-/opt/indiolab}"
 
 REPOS=(
   "admin.dev.indiolab.com.br:admin-api"
@@ -24,6 +30,8 @@ REPOS=(
   "shared.dev.indiolab.com.br:shared-web"
 )
 
+echo "==> WORK_DIR = $WORK_DIR"
+mkdir -p "$WORK_DIR"
 cd "$WORK_DIR"
 for entry in "${REPOS[@]}"; do
   parent="${entry%%:*}"
