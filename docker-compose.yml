@@ -13,7 +13,7 @@
 #         ├── n8n/                   ← persistência n8n
 #         └── uploads/               ← uploads dos APIs
 #                ├── erp/
-#                └── ichat/
+#                └── chat/
 
 services:
   postgres:
@@ -90,26 +90,31 @@ services:
       postgres:
         condition: service_healthy
 
-  ichat-api:
+  chat-api:
     build:
       context: ..
       dockerfile: chat.dev.indiolab.com.br/chat-api/Dockerfile
-    image: indiolab-ichat-api:latest
-    container_name: indiolab-ichat-api
+    image: indiolab-chat-api:latest
+    container_name: indiolab-chat-api
     restart: always
     network_mode: host
     environment:
       ASPNETCORE_URLS: http://+:5052
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__DefaultConnection: ${ConnectionStrings__DefaultConnection}
+      # chat-api usa banco proprio (indiolab_chat) — separado do ERP (opticalcore).
+      # Os schemas-per-tenant (CNPJ) so existem em indiolab_chat com as tabelas do chat.
+      ConnectionStrings__DefaultConnection: ${ChatApi__ConnectionString}
       JwtSettings__Issuer: https://auth.dev.indiolab.com.br
       JwtSettings__Audience: indiolab-erp
       JwtSettings__RsaPublicKeyPem: ${JWT_RSA_PUBLIC_KEY}
       JwtSettings__AccessTokenMinutes: 15
       JwtSettings__RefreshTokenDays: 7
       Internal__SharedSecret: ${INTERNAL_SHARED_SECRET_CHAT}
+      Evolution__BaseUrl: ${EVOLUTION_BASE_URL}
+      Evolution__ApiKey: ${EVOLUTION_API_KEY}
+      Evolution__WebhookBaseUrl: ${EVOLUTION_WEBHOOK_BASE_URL}
     volumes:
-      - /opt/indiolab/data/uploads/ichat:/app/wwwroot/uploads
+      - /opt/indiolab/data/uploads/chat:/app/wwwroot/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -144,10 +149,10 @@ services:
       Internal__CrmSharedSecret: ${INTERNAL_SHARED_SECRET_CRM}
       Internal__ChatApiUrl: http://localhost:5052
       Internal__ChatSharedSecret: ${INTERNAL_SHARED_SECRET_CHAT}
-      # Tenant fan-out (admin orquestra erp/crm/ichat por tenant)
+      # Tenant fan-out (admin orquestra erp/crm/chat por tenant)
       Tenants__BusinessApis__erp-api: http://localhost:5050
       Tenants__BusinessApis__crm-api: http://localhost:5051
-      Tenants__BusinessApis__ichat-api: http://localhost:5052
+      Tenants__BusinessApis__chat-api: http://localhost:5052
     depends_on:
       postgres:
         condition: service_healthy
@@ -183,7 +188,7 @@ services:
     ports:
       - "3002:80"
 
-  ichat-web:
+  chat-web:
     build:
       context: ..
       dockerfile: chat.dev.indiolab.com.br/chat-web/Dockerfile
@@ -191,8 +196,8 @@ services:
         VITE_API_URL: https://chat.dev.indiolab.com.br/api
         VITE_AUTH_API_URL: https://admin.dev.indiolab.com.br/api
         VITE_ADMIN_API_URL: https://admin.dev.indiolab.com.br
-    image: indiolab-ichat-web:latest
-    container_name: indiolab-ichat-web
+    image: indiolab-chat-web:latest
+    container_name: indiolab-chat-web
     restart: always
     ports:
       - "3003:80"
