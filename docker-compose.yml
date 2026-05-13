@@ -167,7 +167,7 @@ services:
       dockerfile: erp.dev.indiolab.com.br/erp-web/Dockerfile
       args:
         VITE_API_URL: https://erp.dev.indiolab.com.br/api
-        VITE_ADMIN_API_URL: https://admin.dev.indiolab.com.br
+        VITE_ADMIN_API_URL: https://erp.dev.indiolab.com.br
     image: indiolab-erp-web:latest
     container_name: indiolab-erp-web
     restart: always
@@ -180,8 +180,8 @@ services:
       dockerfile: crm.dev.indiolab.com.br/crm-web/Dockerfile
       args:
         VITE_API_URL: https://crm.dev.indiolab.com.br/api
-        VITE_AUTH_API_URL: https://admin.dev.indiolab.com.br/api
-        VITE_ADMIN_API_URL: https://admin.dev.indiolab.com.br
+        VITE_AUTH_API_URL: https://crm.dev.indiolab.com.br/api
+        VITE_ADMIN_API_URL: https://crm.dev.indiolab.com.br
     image: indiolab-crm-web:latest
     container_name: indiolab-crm-web
     restart: always
