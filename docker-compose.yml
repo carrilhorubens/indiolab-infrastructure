@@ -194,8 +194,8 @@ services:
       dockerfile: chat.dev.indiolab.com.br/chat-web/Dockerfile
       args:
         VITE_API_URL: https://chat.dev.indiolab.com.br/api
-        VITE_AUTH_API_URL: https://admin.dev.indiolab.com.br/api
-        VITE_ADMIN_API_URL: https://admin.dev.indiolab.com.br
+        VITE_AUTH_API_URL: https://chat.dev.indiolab.com.br/api
+        VITE_ADMIN_API_URL: https://chat.dev.indiolab.com.br
     image: indiolab-chat-web:latest
     container_name: indiolab-chat-web
     restart: always
